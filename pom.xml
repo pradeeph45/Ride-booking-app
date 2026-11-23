@@ -7,7 +7,7 @@
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>4.1.0</version> <!-- use the latest 4.1.x patch from start.spring.io -->
+    <version>4.2.0</version> <!-- Spring Cloud 2026.0 requires Boot 4.2.x -->
     <relativePath/>
   </parent>
 
@@ -24,7 +24,27 @@
 
   <modules>
     <module>services/common</module>
+    <module>services/auth-service</module>
+    <module>services/gateway</module>
   </modules>
+
+  <build>
+    <plugins>
+      <!-- Runs *IT classes (Testcontainers integration tests) during `verify` -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 
   <dependencyManagement>
     <dependencies>

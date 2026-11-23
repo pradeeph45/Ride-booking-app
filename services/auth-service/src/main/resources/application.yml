@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: auth-service
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    # Docker Compose MySQL is published on host port 3307. Password must come from the environment.
+    # preserveInstants/connectionTimeZone keep token timestamps correct (Authorization Server schema note).
+    url: ${AUTH_DB_URL:jdbc:mysql://localhost:3307/rb_auth?preserveInstants=true&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true}
+    username: ${AUTH_DB_USER:rb_app}
+    password: ${AUTH_DB_PASSWORD}
+  mail:
+    # Local default: Mailpit from Docker Compose (inbox at http://localhost:8025), no authentication.
+    # Real SMTP: set MAIL_HOST/MAIL_PORT plus SPRING_MAIL_USERNAME and SPRING_MAIL_PASSWORD env vars.
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate   # Flyway owns the schema; Hibernate only verifies it
+  flyway:
+    enabled: true
+
+server:
+  port: 8081
+
+ridebooking:
+  auth:
+    issuer: ${AUTH_ISSUER:http://localhost:8081}
+    web-redirect-uri: ${WEB_REDIRECT_URI:http://localhost:5173/callback}
+    bff-client-secret: ${BFF_CLIENT_SECRET}   # required; never commit a value
+  google:
+    client-id: ${GOOGLE_CLIENT_ID:}   # public OAuth client id from Google Cloud Console (not a secret); empty = Google login off
+  otp:
+    sender: ${OTP_SENDER:smtp}   # smtp (email) or console (dev: writes the code to the log)
+    from: ${OTP_FROM:no-reply@ridebooking.local}
+    length: 6
+    ttl: 5m
+    max-attempts: 5
+    resend-cooldown: 60s
+  session:
+    absolute-ttl: 30d
+    idle-ttl: 14d
+    revocation-ttl: 20m
+  login:
+    max-failures: 5
+    lock-duration: 15m

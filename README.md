@@ -3,7 +3,7 @@
 Uber-style platform: bike, auto, car categories (incl. pooling) and parcel delivery, with scheduled rides, ride history, invoices and live driver tracking.
 
 ## Stack
-- **Backend:** Java 21, Spring Boot 4.1 (Maven multi-module), Spring Security + OAuth2 (Spring Authorization Server), Spring Cloud Gateway, Spring Data JPA, Flyway, Resilience4j
+- **Backend:** Java 21, Spring Boot 4.2 (Maven multi-module), Spring Security + OAuth2 (Spring Authorization Server), Spring Cloud Gateway, Spring Data JPA, Flyway, Resilience4j
 - **Data:** MySQL 8 (one DB per service), Redis (GEO, locks, sessions, cache), Kafka (KRaft), MinIO/S3
 - **Frontend:** React + TypeScript + Vite, Leaflet/OpenStreetMap, STOMP WebSocket
 - **DevOps:** Docker, Compose, Kubernetes, GitHub Actions, Terraform, AWS, Prometheus/Grafana/Jaeger/Loki, k6

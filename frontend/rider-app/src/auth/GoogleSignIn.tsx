@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { ApiError, googleLogin } from './api';
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+/** False when no Google client id is configured. Pages hide the whole Google section in that case. */
+export const GOOGLE_ENABLED = Boolean(CLIENT_ID);
 const SCRIPT_SRC = 'https://accounts.google.com/gsi/client';
 
 function loadGoogleScript(): Promise<void> {
@@ -58,9 +61,7 @@ export default function GoogleSignIn({ role }: { role: 'RIDER' | 'DRIVER' }) {
     };
   }, [navigate]);
 
-  if (!CLIENT_ID) {
-    return <p className="muted center">Google sign-in is not configured (set VITE_GOOGLE_CLIENT_ID).</p>;
-  }
+  if (!CLIENT_ID) return null; // not configured: show nothing to end users
   return (
     <div className="google">
       <div ref={holder} />

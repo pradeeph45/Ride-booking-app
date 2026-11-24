@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { api, logout, type DeviceSession, type UserProfile } from '../auth/api';
+import { Link } from 'react-router-dom';
+import { api, type DeviceSession, type UserProfile } from '../auth/api';
+import { describeDevice, initialsOf, roleLabel, timeAgo } from '../ui/format';
+
+function greetingName(email: string): string {
+  const first = email.split('@')[0].split(/[._-]+/)[0];
+  return first.charAt(0).toUpperCase() + first.slice(1);
+}
 
 export default function Home() {
-  const navigate = useNavigate();
   const [me, setMe] = useState<UserProfile | null>(null);
   const [devices, setDevices] = useState<DeviceSession[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +22,7 @@ export default function Home() {
       setMe(profile);
       setDevices(sessions);
     } catch {
-      setError('Could not load your account.');
+      setError('We could not load your account. Please refresh the page.');
     }
   }, []);
 
@@ -30,42 +35,88 @@ export default function Home() {
     await load();
   }
 
-  async function signOut() {
-    await logout();
-    navigate('/login', { replace: true });
+  if (error) {
+    return <div className="container"><div role="alert" className="alert error">{error}</div></div>;
+  }
+  if (!me) {
+    return (
+      <div className="container">
+        <div className="skeleton" style={{ height: 96 }} />
+        <div className="skeleton" style={{ height: 110 }} />
+        <div className="skeleton" style={{ height: 180 }} />
+      </div>
+    );
   }
 
-  if (error) return <p role="alert" className="error center">{error}</p>;
-  if (!me) return <p className="muted center">Loading…</p>;
+  const isRider = me.role === 'RIDER';
+  const isDriver = me.role === 'DRIVER';
 
   return (
-    <div className="card">
-      <h2>Welcome</h2>
-      <dl>
-        <dt>Email</dt>
-        <dd>{me.email}</dd>
-        <dt>Role</dt>
-        <dd>{me.role}</dd>
-        <dt>Member since</dt>
-        <dd>{new Date(me.createdAt).toLocaleString()}</dd>
-      </dl>
+    <div className="container">
+      <section className="card profile" aria-label="Your account">
+        <span className="avatar large" aria-hidden="true">{initialsOf(me.email)}</span>
+        <div>
+          <h2>Hi, {greetingName(me.email)} 👋</h2>
+          <div className="meta hint">{me.email}</div>
+          <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <span className="pill primary">{roleLabel(me.role)}</span>
+            <span className="pill">Member since {new Date(me.createdAt).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}</span>
+          </div>
+        </div>
+      </section>
 
-      <h3>Your devices</h3>
-      <ul className="devices">
-        {devices.map((d) => (
-          <li key={d.id}>
-            <div>
-              <strong>{d.deviceName ?? 'Unknown device'}</strong> {d.current && <span className="badge">this device</span>}
-              <div className="muted">
-                {d.ipAddress ?? 'unknown IP'} · last active {new Date(d.lastSeenAt).toLocaleString()}
+      <nav className="tiles" aria-label="Quick actions">
+        {isRider && (
+          <Link className="tile primary" to="/book">
+            <span className="tile-icon" aria-hidden="true">🚕</span>
+            <strong>Book a ride</strong>
+            <span className="sub">Bike, auto or car</span>
+          </Link>
+        )}
+        {isDriver && (
+          <Link className="tile primary" to="/driver">
+            <span className="tile-icon" aria-hidden="true">🧭</span>
+            <strong>Driver console</strong>
+            <span className="sub">See ride requests</span>
+          </Link>
+        )}
+        <Link className="tile" to="/trips">
+          <span className="tile-icon" aria-hidden="true">🧾</span>
+          <strong>My trips</strong>
+          <span className="sub">History and status</span>
+        </Link>
+      </nav>
+
+      <div className="section-title">
+        <h3>Where you are signed in</h3>
+        <span className="hint">{devices.length} {devices.length === 1 ? 'device' : 'devices'}</span>
+      </div>
+      <ul className="list">
+        {devices.map((d) => {
+          const device = describeDevice(d.deviceName);
+          return (
+            <li key={d.id} className={`list-row ${d.current ? 'current' : ''}`}>
+              <span className="device-icon" aria-hidden="true">{device.icon}</span>
+              <div className="grow">
+                <div className="title">
+                  {device.label}
+                  {d.current && <span className="pill ok">This device</span>}
+                </div>
+                <div className="meta">
+                  {d.current ? 'Active now' : `Last active ${timeAgo(d.lastSeenAt)}`}
+                  {d.ipAddress ? ` · ${d.ipAddress}` : ''}
+                </div>
               </div>
-            </div>
-            {!d.current && <button className="link" onClick={() => endDevice(d.id)}>End session</button>}
-          </li>
-        ))}
+              {!d.current && (
+                <button className="btn danger-ghost sm" onClick={() => endDevice(d.id)} aria-label={`End session on ${device.label}`}>
+                  Sign out
+                </button>
+              )}
+            </li>
+          );
+        })}
       </ul>
-
-      <button onClick={signOut}>Log out</button>
+      <p className="hint">If you do not recognise a device, sign it out. Signing out takes effect immediately.</p>
     </div>
   );
 }

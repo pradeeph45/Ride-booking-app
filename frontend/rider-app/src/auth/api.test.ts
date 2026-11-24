@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, clearSession, getAccessToken, googleLogin, login, refreshSession } from './api';
+import { createBooking, driverAction, listBookings } from './bookings';
 
 function json(status: number, body?: unknown): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -76,6 +77,54 @@ describe('api client', () => {
 
     expect(me.email).toBe('a@b.com');
     expect(fetchMock.mock.calls[3][1].headers.Authorization).toBe('Bearer FRESH');
+  });
+
+  describe('bookings', () => {
+    beforeEach(async () => {
+      fetchMock.mockResolvedValueOnce(json(200, { accessToken: 'AT', expiresIn: 899 }));
+      await login('a@b.com', '123456');
+      fetchMock.mockReset();
+    });
+
+    it('creates a booking with a JSON body and the bearer token, and sends no price', async () => {
+      fetchMock.mockResolvedValueOnce(json(201, { id: 'b1', status: 'REQUESTED' }));
+
+      const booking = await createBooking('CAR_MINI', { lat: 12.97, lng: 77.6, address: 'A' }, { lat: 12.93, lng: 77.62 });
+
+      expect(booking.id).toBe('b1');
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe('/api/bookings');
+      expect(init.method).toBe('POST');
+      expect(init.headers.Authorization).toBe('Bearer AT');
+      expect(init.headers['Content-Type']).toBe('application/json');
+      const sent = JSON.parse(init.body);
+      expect(sent.serviceType).toBe('CAR_MINI');
+      expect(sent).not.toHaveProperty('fare'); // the server prices the trip
+      expect(sent).not.toHaveProperty('status');
+    });
+
+    it('pages ride history with the cursor and optional status filter', async () => {
+      fetchMock.mockResolvedValueOnce(json(200, { items: [], nextCursor: null }));
+
+      await listBookings({ cursor: 'abc_-', status: 'COMPLETED', limit: 10 });
+
+      expect(fetchMock.mock.calls[0][0]).toBe('/api/bookings?limit=10&status=COMPLETED&cursor=abc_-');
+    });
+
+    it('drives a trip forward through the driver endpoints', async () => {
+      fetchMock.mockResolvedValueOnce(json(200, { id: 'b1', status: 'ARRIVED' }));
+
+      await driverAction('b1', 'arrive');
+
+      expect(fetchMock.mock.calls[0][0]).toBe('/api/bookings/b1/arrive');
+      expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+    });
+
+    it('reports a lost race as a 409 ApiError with the server code', async () => {
+      fetchMock.mockResolvedValueOnce(json(409, { code: 'BOOKING_CONFLICT' }));
+
+      await expect(driverAction('b1', 'accept')).rejects.toMatchObject({ status: 409, code: 'BOOKING_CONFLICT' });
+    });
   });
 
   it('clears the session when refresh fails', async () => {

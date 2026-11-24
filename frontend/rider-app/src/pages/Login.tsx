@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ApiError, login, requestOtp } from '../auth/api';
-import GoogleSignIn from '../auth/GoogleSignIn';
+import GoogleSignIn, { GOOGLE_ENABLED } from '../auth/GoogleSignIn';
 
 /** Passwordless login: email -> one-time code -> signed in. */
 export default function Login() {
@@ -23,7 +23,7 @@ export default function Login() {
       await requestOtp(email);
       setSent(true); // same screen whether or not the email exists: no account enumeration
     } catch {
-      setError('Could not send a code. Please try again.');
+      setError('We could not send a code. Please try again.');
     } finally {
       setBusy(false);
     }
@@ -39,7 +39,7 @@ export default function Login() {
     } catch (err) {
       setError(
         err instanceof ApiError && err.status === 401
-          ? 'That code is wrong or has expired. Request a new one.'
+          ? 'That code is wrong or has expired. Go back and request a new one.'
           : 'Login failed. Please try again.',
       );
     } finally {
@@ -48,51 +48,64 @@ export default function Login() {
   }
 
   return (
-    <div className="card">
-      <h2>Log in</h2>
-      {preset.registered && !sent && <p className="ok">Account created. Request a code to log in.</p>}
-      {!sent ? (
-        <form onSubmit={sendCode}>
-          <label>
-            Email
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
-          </label>
-          {error && <p role="alert" className="error">{error}</p>}
-          <button disabled={busy}>{busy ? 'Sending…' : 'Email me a code'}</button>
-        </form>
-      ) : (
-        <form onSubmit={verify}>
-          <p className="muted">If that account exists, a 6-digit code was sent to {email}. It expires in 5 minutes.</p>
-          <label>
-            Code
-            <input
-              inputMode="numeric"
-              pattern="\d{6}"
-              maxLength={6}
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-              required
-              autoComplete="one-time-code"
-              autoFocus
-            />
-          </label>
-          {error && <p role="alert" className="error">{error}</p>}
-          <button disabled={busy || code.length !== 6}>{busy ? 'Checking…' : 'Log in'}</button>
-          <button type="button" className="link" onClick={() => { setSent(false); setCode(''); setError(null); }}>
-            Use a different email or resend
-          </button>
-        </form>
-      )}
-      <div className="divider">or</div>
-      <label>
-        First time here? I am a
-        <select value={role} onChange={(e) => setRole(e.target.value as 'RIDER' | 'DRIVER')}>
-          <option value="RIDER">Rider</option>
-          <option value="DRIVER">Driver</option>
-        </select>
-      </label>
-      <GoogleSignIn role={role} />
-      <p className="muted">
+    <div className="container narrow">
+      <div style={{ textAlign: 'center', padding: '12px 0 4px' }}>
+        <h1 className="page-title">{sent ? 'Check your email' : 'Welcome back'}</h1>
+        <p className="page-sub">{sent ? `We sent a 6-digit code to ${email}` : 'Log in with a one-time code. No password needed.'}</p>
+      </div>
+
+      <div className="card">
+        {preset.registered && !sent && <div className="alert ok">🎉 Account created. Enter your email to get a login code.</div>}
+
+        {!sent ? (
+          <form onSubmit={sendCode} className="form">
+            <label className="field">
+              Email address
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" placeholder="you@example.com" autoFocus />
+            </label>
+            {error && <div role="alert" className="alert error">{error}</div>}
+            <button className="btn lg block" disabled={busy}>{busy ? 'Sending…' : 'Email me a code'}</button>
+          </form>
+        ) : (
+          <form onSubmit={verify} className="form">
+            <label className="field">
+              Login code
+              <input
+                className="otp-input"
+                inputMode="numeric"
+                pattern="\d{6}"
+                maxLength={6}
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                required
+                autoComplete="one-time-code"
+                autoFocus
+                placeholder="······"
+              />
+            </label>
+            <p className="hint">The code expires in 5 minutes and works once.</p>
+            {error && <div role="alert" className="alert error">{error}</div>}
+            <button className="btn lg block" disabled={busy || code.length !== 6}>{busy ? 'Checking…' : 'Log in'}</button>
+            <button type="button" className="btn ghost block" onClick={() => { setSent(false); setCode(''); setError(null); }}>
+              Use a different email or resend
+            </button>
+          </form>
+        )}
+
+        {!sent && GOOGLE_ENABLED && (
+          <>
+            <div className="divider">or continue with</div>
+            <div className="segmented" role="group" aria-label="If this is your first time with Google, I am a">
+              <button type="button" className={role === 'RIDER' ? 'on' : ''} onClick={() => setRole('RIDER')}>🚕 Rider</button>
+              <button type="button" className={role === 'DRIVER' ? 'on' : ''} onClick={() => setRole('DRIVER')}>🧭 Driver</button>
+            </div>
+            <GoogleSignIn role={role} />
+            <p className="hint" style={{ textAlign: 'center' }}>The choice above only applies when Google creates a new account.</p>
+          </>
+        )}
+      </div>
+
+      <p className="hint" style={{ textAlign: 'center' }}>
         New here? <Link to="/register">Create an account</Link>
       </p>
     </div>

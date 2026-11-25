@@ -1,13 +1,16 @@
+import { Suspense, lazy } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { logout } from './auth/api';
 import { useAuth } from './auth/AuthContext';
-import Book from './pages/Book';
-import Driver from './pages/Driver';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
-import Trips from './pages/Trips';
 import { initialsOf, roleLabel } from './ui/format';
+
+// The map library is large, so the pages that use it load on demand: logging in stays fast.
+const Book = lazy(() => import('./pages/Book'));
+const Driver = lazy(() => import('./pages/Driver'));
+const Trips = lazy(() => import('./pages/Trips'));
 
 function Protected({ children }: { children: React.ReactElement }) {
   const { ready, signedIn } = useAuth();
@@ -61,6 +64,7 @@ export default function App() {
   return (
     <div className="shell">
       <Header />
+      <Suspense fallback={<div className="container"><div className="skeleton" style={{ height: 320 }} /></div>}>
       <Routes>
         <Route path="/register" element={<Register />} />
         <Route path="/login" element={<Login />} />
@@ -70,6 +74,7 @@ export default function App() {
         <Route path="/driver" element={<Protected><Driver /></Protected>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </div>
   );
 }

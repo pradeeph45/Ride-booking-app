@@ -49,6 +49,11 @@ export function installMockApi(opts: { role: 'RIDER' | 'DRIVER'; empty: boolean;
   };
   window.fetch = async (input: RequestInfo | URL) => {
     const url = String(input);
+    if (url.includes('nominatim.openstreetmap.org/search')) return json([
+      { lat: '12.9719', lon: '77.6412', display_name: 'Indiranagar, Bengaluru, Karnataka, 560038, India' },
+      { lat: '12.9784', lon: '77.6408', display_name: '100 Feet Road, Indiranagar, Bengaluru, Karnataka, India' },
+    ]);
+    if (url.includes('nominatim.openstreetmap.org/reverse')) return json({ display_name: 'Church Street, Shanthala Nagar, Bengaluru, Karnataka, 560001, India' });
     if (url.includes('/bff/refresh')) return opts.anon ? json({}, 401) : json({ accessToken: 'preview', expiresIn: 899 });
     if (url.includes('/api/auth/otp/request')) return new Response(null, { status: 202 });
     if (url.includes('/api/users/me/sessions')) return json(SESSIONS);

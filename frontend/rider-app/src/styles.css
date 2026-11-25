@@ -225,3 +225,21 @@ details.coords .row { margin-top: 8px; }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* ---------- Map ---------- */
+.map { position: relative; z-index: 0; isolation: isolate; border-radius: 14px; overflow: hidden; border: 1px solid var(--border); background: var(--surface-2); }
+.map .leaflet-container { font: inherit; }
+.pin { background: none; border: 0; }
+.pin span { display: block; width: 26px; height: 26px; margin: 2px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: var(--primary); border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); }
+.pin-drop span { background: var(--danger); border-radius: 6px; transform: none; }
+.pin-legend { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--primary); }
+.pin-legend.drop { border-radius: 3px; background: var(--danger); }
+.segmented button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.stop-fields { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 12px; border: 1px solid transparent; }
+.stop-fields.active { border-color: var(--primary); background: color-mix(in srgb, var(--primary-soft) 55%, transparent); }
+.search-row { display: flex; gap: 8px; }
+.search-row input { flex: 1; min-width: 0; }
+.results { list-style: none; margin: 0; padding: 4px; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.results button { width: 100%; text-align: left; border: 0; background: transparent; padding: 10px; border-radius: 8px; cursor: pointer; color: var(--text); }
+.results button:hover { background: var(--primary-soft); }
+.leaflet-control-attribution { font-size: 10px; }

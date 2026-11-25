@@ -1,32 +1,107 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError } from '../auth/api';
+import { RetryKey } from '../auth/idempotency';
 import {
   SERVICE_ICONS, SERVICE_LABELS, SERVICE_TAGLINES, createBooking, estimateFares, formatMoney,
   type FareQuote, type Place, type ServiceType,
 } from '../auth/bookings';
+import { geocoder, type PlaceResult } from '../map/geocode';
+import { isValidLatLng, roundCoord, type LatLng } from '../map/geo';
+import RouteMap, { type PinKind } from '../map/RouteMap';
 
-// Bengaluru sample points. A map picker replaces these inputs in the map phase.
+// Bengaluru sample points so fares can be tried straight away; tap the map to choose your own.
 const DEFAULT_PICKUP = { lat: '12.9756', lng: '77.6050', address: 'MG Road' };
 const DEFAULT_DROP = { lat: '12.9352', lng: '77.6245', address: 'Koramangala' };
 
 type Fields = { lat: string; lng: string; address: string };
 
 const toPlace = (f: Fields): Place => ({ lat: Number(f.lat), lng: Number(f.lng), address: f.address || undefined });
+const toLatLng = (f: Fields): LatLng | null =>
+  isValidLatLng(Number(f.lat), Number(f.lng)) && f.lat !== '' && f.lng !== '' ? { lat: Number(f.lat), lng: Number(f.lng) } : null;
+const fieldsFrom = (p: LatLng, address: string): Fields => ({ lat: String(roundCoord(p.lat)), lng: String(roundCoord(p.lng)), address });
 
 const MESSAGES: Record<string, string> = {
   INVALID_REQUEST: 'Pickup and drop are too close together, or the location is invalid.',
-  VALIDATION_FAILED: 'Please check the coordinates.',
+  VALIDATION_FAILED: 'Please check the locations.',
 };
 
-function StopFields({ label, value, onChange }: { label: string; value: Fields; onChange: (f: Fields) => void }) {
+interface StopProps {
+  kind: PinKind;
+  label: string;
+  value: Fields;
+  active: boolean;
+  onFocusTarget: () => void;
+  onChange: (f: Fields) => void;
+  onSelect: (r: PlaceResult) => void;
+  onUseMyLocation?: () => void;
+}
+
+function StopFields({ kind, label, value, active, onFocusTarget, onChange, onSelect, onUseMyLocation }: StopProps) {
+  const [results, setResults] = useState<PlaceResult[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const set = (key: keyof Fields) => (e: React.ChangeEvent<HTMLInputElement>) => onChange({ ...value, [key]: e.target.value });
+
+  async function find() {
+    setSearching(true);
+    setSearchError(null);
+    try {
+      const found = await geocoder.search(value.address);
+      setResults(found);
+      if (found.length === 0) setSearchError('No places found. Try a landmark or street name, or tap the map.');
+    } catch {
+      setResults(null);
+      setSearchError('Address search is unavailable right now. You can still tap the map.');
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') {
+      e.preventDefault(); // Enter searches the address; it must not submit the fare form
+      void find();
+    }
+  }
+
   return (
-    <div>
+    <div className={`stop-fields ${active ? 'active' : ''}`}>
       <label className="field">
         {label}
-        <input value={value.address} onChange={set('address')} maxLength={255} placeholder="Search address" required />
+        <span className="search-row">
+          <input
+            value={value.address}
+            onChange={(e) => { set('address')(e); setResults(null); }}
+            onFocus={onFocusTarget}
+            onKeyDown={onKeyDown}
+            maxLength={255}
+            placeholder="Search an address or tap the map"
+            required
+            aria-label={`${label} address`}
+          />
+          <button type="button" className="btn secondary sm" onClick={find} disabled={searching || value.address.trim().length < 3}>
+            {searching ? '…' : 'Find'}
+          </button>
+        </span>
       </label>
+
+      {onUseMyLocation && kind === 'pickup' && (
+        <button type="button" className="btn ghost sm" onClick={onUseMyLocation}>📍 Use my current location</button>
+      )}
+      {searchError && <p className="hint" role="status">{searchError}</p>}
+      {results && results.length > 0 && (
+        <ul className="results" aria-label={`${label} suggestions`}>
+          {results.map((r) => (
+            <li key={`${r.lat},${r.lng}`}>
+              <button type="button" onClick={() => { onSelect(r); setResults(null); }}>
+                <span aria-hidden="true">📌</span> {r.address}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
       <details className="coords">
         <summary>Edit coordinates</summary>
         <div className="row">
@@ -42,14 +117,52 @@ export default function Book() {
   const navigate = useNavigate();
   const [pickup, setPickup] = useState<Fields>(DEFAULT_PICKUP);
   const [drop, setDrop] = useState<Fields>(DEFAULT_DROP);
+  const [target, setTarget] = useState<PinKind>('pickup');
   const [quotes, setQuotes] = useState<FareQuote[] | null>(null);
   const [choice, setChoice] = useState<ServiceType>('CAR_MINI');
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [booking, setBooking] = useState(false);
+  // Same request => same key, so a double-click or a retry after a network error cannot create two bookings.
+  const retryKey = useRef(new RetryKey());
+  const inFlight = useRef(false);
 
   const fail = (err: unknown) =>
     setError((err instanceof ApiError && err.code && MESSAGES[err.code]) || 'Something went wrong. Please try again.');
+
+  const setters = { pickup: setPickup, drop: setDrop };
+  const reset = () => setQuotes(null);
+
+  /** A point chosen on the map (tap or drag): move the pin now, then fill in the street name when it arrives. */
+  function pinPlaced(kind: PinKind, point: LatLng) {
+    const lat = String(roundCoord(point.lat));
+    const lng = String(roundCoord(point.lng));
+    setters[kind](fieldsFrom(point, 'Pinned location'));
+    reset();
+    if (kind === 'pickup') setTarget('drop'); // natural flow: pickup first, then drop
+    geocoder.reverse(point.lat, point.lng).then((name) => {
+      // only apply if the pin has not moved again while we were waiting
+      if (name) setters[kind]((f) => (f.lat === lat && f.lng === lng ? { ...f, address: name } : f));
+    }).catch(() => undefined); // a missing label is fine: the pin still works
+  }
+
+  function placeChosen(kind: PinKind, r: PlaceResult) {
+    setters[kind](fieldsFrom(r, r.address));
+    reset();
+    if (kind === 'pickup') setTarget('drop');
+  }
+
+  function useMyLocation() {
+    if (!navigator.geolocation) {
+      setError('Your browser cannot share its location. Tap the map instead.');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => pinPlaced('pickup', { lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => setError('We could not get your location. Allow location access, or tap the map instead.'),
+      { enableHighAccuracy: true, timeout: 10_000 },
+    );
+  }
 
   async function seeFares(e: FormEvent) {
     e.preventDefault();
@@ -66,38 +179,69 @@ export default function Book() {
   }
 
   async function book() {
+    if (inFlight.current) return; // ignore a second click before the button has re-rendered as disabled
+    inFlight.current = true;
     setBooking(true);
     setError(null);
     try {
-      await createBooking(choice, toPlace(pickup), toPlace(drop));
+      const pickupPlace = toPlace(pickup);
+      const dropPlace = toPlace(drop);
+      const key = retryKey.current.keyFor(JSON.stringify([choice, pickupPlace, dropPlace]));
+      await createBooking(choice, pickupPlace, dropPlace, key);
+      retryKey.current.clear(); // done: booking this same trip again later is a new booking
       navigate('/trips');
     } catch (err) {
+      // keep the key: pressing Book again after an error is a retry of the SAME booking
       fail(err);
       setBooking(false);
+      inFlight.current = false;
     }
   }
 
   const chosen = quotes?.find((q) => q.serviceType === choice);
-  const reset = () => setQuotes(null);
 
   return (
     <div className="container">
       <div>
         <h1 className="page-title">Where to?</h1>
-        <p className="page-sub">Choose your route, compare fares, then book.</p>
+        <p className="page-sub">Tap the map to place your pickup and drop, or search for an address.</p>
       </div>
 
       <form onSubmit={seeFares} className="card form">
-        <div className="route">
-          <div className="stop">
-            <div className="rail" aria-hidden="true"><span className="dot" /><span className="line" /></div>
-            <StopFields label="Pickup" value={pickup} onChange={(f) => { setPickup(f); reset(); }} />
-          </div>
-          <div className="stop">
-            <div className="rail" aria-hidden="true"><span className="dot drop" /></div>
-            <StopFields label="Drop" value={drop} onChange={(f) => { setDrop(f); reset(); }} />
-          </div>
+        <div className="segmented" role="group" aria-label="Which pin does a map tap place?">
+          <button type="button" className={target === 'pickup' ? 'on' : ''} onClick={() => setTarget('pickup')}>
+            <span className="pin-legend pickup" aria-hidden="true" /> Set pickup
+          </button>
+          <button type="button" className={target === 'drop' ? 'on' : ''} onClick={() => setTarget('drop')}>
+            <span className="pin-legend drop" aria-hidden="true" /> Set drop
+          </button>
         </div>
+
+        <RouteMap
+          interactive
+          height={280}
+          target={target}
+          pickup={toLatLng(pickup)}
+          drop={toLatLng(drop)}
+          onPick={pinPlaced}
+          label="Pick your route on the map"
+        />
+        <p className="hint">Drag a pin to fine-tune it.</p>
+
+        <StopFields
+          kind="pickup" label="Pickup" value={pickup} active={target === 'pickup'}
+          onFocusTarget={() => setTarget('pickup')}
+          onChange={(f) => { setPickup(f); reset(); }}
+          onSelect={(r) => placeChosen('pickup', r)}
+          onUseMyLocation={useMyLocation}
+        />
+        <StopFields
+          kind="drop" label="Drop" value={drop} active={target === 'drop'}
+          onFocusTarget={() => setTarget('drop')}
+          onChange={(f) => { setDrop(f); reset(); }}
+          onSelect={(r) => placeChosen('drop', r)}
+        />
+
         <button className="btn lg block" disabled={checking}>{checking ? 'Checking fares…' : quotes ? 'Update fares' : 'See fares'}</button>
       </form>
 

@@ -4,6 +4,7 @@ import {
   SERVICE_ICONS, SERVICE_LABELS, driverAction, formatMoney, listBookings, openRequests,
   type Booking, type DriverAction,
 } from '../auth/bookings';
+import RouteMap from '../map/RouteMap';
 import { timeAgo } from '../ui/format';
 import StatusPill from '../ui/StatusPill';
 import TripProgress from '../ui/TripProgress';
@@ -81,6 +82,7 @@ export default function Driver() {
             <StatusPill status={active.status} />
           </div>
           <Stops trip={active} />
+          <RouteMap pickup={active.pickup} drop={active.drop} height={170} label="Route to drive" />
           <TripProgress status={active.status} />
           <div className="trip-foot">
             <span className="price">{formatMoney(active.estimatedFare, active.currency)}</span>

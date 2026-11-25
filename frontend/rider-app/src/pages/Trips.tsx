@@ -3,11 +3,13 @@ import { Link } from 'react-router-dom';
 import {
   SERVICE_ICONS, SERVICE_LABELS, cancelBooking, formatMoney, listBookings, type Booking, type BookingStatus,
 } from '../auth/bookings';
+import RouteMap from '../map/RouteMap';
 import { timeAgo } from '../ui/format';
 import StatusPill from '../ui/StatusPill';
 import TripProgress from '../ui/TripProgress';
 
 const CANCELLABLE: BookingStatus[] = ['REQUESTED', 'MATCHED', 'ARRIVED'];
+const TERMINAL: BookingStatus[] = ['COMPLETED', 'CANCELLED'];
 const FILTERS: { label: string; status?: BookingStatus }[] = [
   { label: 'All' },
   { label: 'Completed', status: 'COMPLETED' },
@@ -115,6 +117,9 @@ export default function Trips() {
           </div>
 
           <Stops trip={t} />
+          {!TERMINAL.includes(t.status) && (
+            <RouteMap pickup={t.pickup} drop={t.drop} height={180} label="Trip route" />
+          )}
 
           {t.status !== 'CANCELLED' && <TripProgress status={t.status} />}
           {t.status === 'MATCHED' && <div className="alert info">🚗 A driver is on the way to your pickup.</div>}

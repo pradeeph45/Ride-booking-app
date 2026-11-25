@@ -144,7 +144,10 @@ export async function logout(): Promise<void> {
 }
 
 /** Authenticated JSON call. On 401 it refreshes once and retries; if that fails the user is signed out. */
-export async function api<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+export async function api<T>(
+  path: string,
+  init: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
+): Promise<T> {
   const call = () =>
     fetch(path, {
       method: init.method ?? (init.body === undefined ? 'GET' : 'POST'),
@@ -152,6 +155,7 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
       headers: {
         Authorization: `Bearer ${accessToken ?? ''}`,
         ...(init.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...init.headers,
       } as Record<string, string>,
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
     });

@@ -151,7 +151,10 @@ class BookingFlowIT extends BookingIntegrationTest {
         as(rider(alice), "POST", "/bookings/" + early + "/cancel")
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CANCELLED"));
         as(driver(dave), "POST", "/bookings/" + early + "/accept").andExpect(status().isConflict()); // cancelled: not takeable
-        as(rider(alice), "POST", "/bookings/" + early + "/cancel").andExpect(status().isConflict());  // not twice
+        // a retry of the same cancel (e.g. the first response was lost) succeeds without changing anything
+        as(rider(alice), "POST", "/bookings/" + early + "/cancel")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CANCELLED"));
+        assertThat(history.findByBookingIdOrderByChangedAtAsc(early)).hasSize(2); // REQUESTED, CANCELLED: no duplicate row
 
         UUID late = bookRide(alice);
         as(driver(dave), "POST", "/bookings/" + late + "/accept");

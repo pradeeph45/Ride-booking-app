@@ -103,6 +103,36 @@ describe('api client', () => {
       expect(sent).not.toHaveProperty('status');
     });
 
+    it('sends the Idempotency-Key header on create so a retry cannot book twice', async () => {
+      fetchMock.mockResolvedValueOnce(json(200, { id: 'b1', status: 'REQUESTED' }));
+
+      await createBooking('BIKE', { lat: 12.97, lng: 77.6 }, { lat: 12.93, lng: 77.62 }, 'key-from-the-form');
+
+      expect(fetchMock.mock.calls[0][1].headers['Idempotency-Key']).toBe('key-from-the-form');
+    });
+
+    it('omits the header when no key is given', async () => {
+      fetchMock.mockResolvedValueOnce(json(201, { id: 'b1' }));
+
+      await createBooking('BIKE', { lat: 12.97, lng: 77.6 }, { lat: 12.93, lng: 77.62 });
+
+      expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty('Idempotency-Key');
+    });
+
+    it('keeps the same key when the call is retried after an automatic token refresh', async () => {
+      fetchMock
+        .mockResolvedValueOnce(json(401)) // expired token on the first attempt
+        .mockResolvedValueOnce(json(200, { accessToken: 'FRESH', expiresIn: 899 })) // refresh
+        .mockResolvedValueOnce(json(201, { id: 'b1' })); // the retry
+
+      await createBooking('BIKE', { lat: 12.97, lng: 77.6 }, { lat: 12.93, lng: 77.62 }, 'same-key-1234');
+
+      const sent = fetchMock.mock.calls.filter(([url]) => url === '/api/bookings');
+      expect(sent).toHaveLength(2);
+      expect(sent[0][1].headers['Idempotency-Key']).toBe('same-key-1234');
+      expect(sent[1][1].headers['Idempotency-Key']).toBe('same-key-1234'); // so the server cannot create it twice
+    });
+
     it('pages ride history with the cursor and optional status filter', async () => {
       fetchMock.mockResolvedValueOnce(json(200, { items: [], nextCursor: null }));
 

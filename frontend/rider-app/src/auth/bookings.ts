@@ -44,8 +44,15 @@ export type DriverAction = 'accept' | 'arrive' | 'start' | 'complete';
 export const estimateFares = (pickup: Place, drop: Place) =>
   api<FareQuote[]>('/api/bookings/estimate', { body: { pickup, drop } });
 
-export const createBooking = (serviceType: ServiceType, pickup: Place, drop: Place) =>
-  api<Booking>('/api/bookings', { body: { serviceType, pickup, drop } });
+/**
+ * Books a ride. Pass an idempotency key (see RetryKey) so that retrying the same request returns the booking
+ * already made instead of creating a second one.
+ */
+export const createBooking = (serviceType: ServiceType, pickup: Place, drop: Place, idempotencyKey?: string) =>
+  api<Booking>('/api/bookings', {
+    body: { serviceType, pickup, drop },
+    headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+  });
 
 export const cancelBooking = (id: string) => api<Booking>(`/api/bookings/${id}/cancel`, { method: 'POST' });
 

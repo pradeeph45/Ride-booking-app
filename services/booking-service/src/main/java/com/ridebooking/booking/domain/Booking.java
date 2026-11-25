@@ -77,6 +77,14 @@ public class Booking {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    /** Client-chosen key making a create request safe to retry; unique per rider. Null when the client sent none. */
+    @Column(name = "idempotency_key", updatable = false, length = 64)
+    private String idempotencyKey;
+
+    /** Digest of the original request, to tell a genuine retry from a reused key with a different request. */
+    @Column(name = "request_fingerprint", updatable = false, length = 64)
+    private String requestFingerprint;
+
     @Version
     private long version;
 
@@ -86,7 +94,14 @@ public class Booking {
 
     public static Booking request(UUID riderId, ServiceType type, Place pickup, Place drop,
                                   FareQuote quote, Instant now) {
+        return request(riderId, type, pickup, drop, quote, now, null, null);
+    }
+
+    public static Booking request(UUID riderId, ServiceType type, Place pickup, Place drop,
+                                  FareQuote quote, Instant now, String idempotencyKey, String requestFingerprint) {
         Booking b = new Booking();
+        b.idempotencyKey = idempotencyKey;
+        b.requestFingerprint = requestFingerprint;
         b.id = UUID.randomUUID();
         b.riderId = riderId;
         b.serviceType = type;
@@ -102,42 +117,64 @@ public class Booking {
         return b;
     }
 
-    /** A driver takes the booking. Fails if it is no longer open, so a second driver cannot also take it. */
-    public void assignDriver(UUID driver, Instant now) {
+    /**
+     * A driver takes the booking. Fails if another driver already has it, so two drivers cannot both win.
+     * Retry-safe: if THIS driver already holds the booking, repeating the call changes nothing.
+     *
+     * @return true if the booking changed, false if the call was a repeat of something already done
+     */
+    public boolean assignDriver(UUID driver, Instant now) {
         if (driver.equals(riderId)) {
             throw new BookingAccessDeniedException("You cannot drive your own booking");
         }
+        if (driver.equals(driverId) && status != BookingStatus.CANCELLED) {
+            return false; // a retry of my own accept (even a late one, once the trip has moved on)
+        }
         moveTo(BookingStatus.MATCHED, now);
         this.driverId = driver;
+        return true;
     }
 
-    public void driverArrived(UUID driver, Instant now) {
+    public boolean driverArrived(UUID driver, Instant now) {
         requireAssignedDriver(driver);
-        moveTo(BookingStatus.ARRIVED, now);
+        return moveToUnlessAlready(BookingStatus.ARRIVED, now);
     }
 
-    public void start(UUID driver, Instant now) {
+    public boolean start(UUID driver, Instant now) {
         requireAssignedDriver(driver);
-        moveTo(BookingStatus.STARTED, now);
+        return moveToUnlessAlready(BookingStatus.STARTED, now);
     }
 
-    public void complete(UUID driver, Instant now) {
+    public boolean complete(UUID driver, Instant now) {
         requireAssignedDriver(driver);
-        moveTo(BookingStatus.COMPLETED, now);
-        this.finalFare = estimatedFare; // metered fare replaces this once live tracking exists
+        boolean changed = moveToUnlessAlready(BookingStatus.COMPLETED, now);
+        if (changed) {
+            this.finalFare = estimatedFare; // metered fare replaces this once live tracking exists
+        }
+        return changed;
     }
 
-    public void cancelByRider(UUID rider, Instant now) {
+    /** Retry-safe: cancelling something already cancelled is a no-op. The owner check still applies first. */
+    public boolean cancelByRider(UUID rider, Instant now) {
         if (!riderId.equals(rider)) {
             throw new BookingAccessDeniedException("Not your booking");
         }
-        moveTo(BookingStatus.CANCELLED, now);
+        return moveToUnlessAlready(BookingStatus.CANCELLED, now);
     }
 
     private void requireAssignedDriver(UUID driver) {
         if (driverId == null || !driverId.equals(driver)) {
             throw new BookingAccessDeniedException("You are not the driver of this booking");
         }
+    }
+
+    /** Moves to {@code next}; if already there, does nothing (a retry). Returns whether anything changed. */
+    private boolean moveToUnlessAlready(BookingStatus next, Instant now) {
+        if (status == next) {
+            return false;
+        }
+        moveTo(next, now);
+        return true;
     }
 
     private void moveTo(BookingStatus next, Instant now) {
@@ -166,4 +203,6 @@ public class Booking {
     public String getCurrency() { return currency; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public String getIdempotencyKey() { return idempotencyKey; }
+    public String getRequestFingerprint() { return requestFingerprint; }
 }

@@ -1,5 +1,6 @@
 package com.ridebooking.booking.api;
 
+import com.ridebooking.booking.application.IdempotencyKeyReusedException;
 import com.ridebooking.booking.domain.BookingAccessDeniedException;
 import com.ridebooking.booking.domain.BookingNotFoundException;
 import com.ridebooking.booking.domain.InvalidBookingTransitionException;
@@ -64,6 +65,12 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiError> conflict() {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiError.of("BOOKING_CONFLICT", "The booking was just changed by someone else. Please refresh."));
+    }
+
+    /** Same Idempotency-Key, different request: refuse rather than guess which one the client meant. */
+    @ExceptionHandler(IdempotencyKeyReusedException.class)
+    ResponseEntity<ApiError> keyReused(IdempotencyKeyReusedException e) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(ApiError.of("IDEMPOTENCY_KEY_REUSED", e.getMessage()));
     }
 
     @ExceptionHandler(Exception.class)

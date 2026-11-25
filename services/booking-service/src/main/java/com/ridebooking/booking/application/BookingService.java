@@ -15,13 +15,17 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
-import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
+import org.springframework.dao.ConcurrencyFailureException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Use cases for bookings. Who the caller is always comes from {@link CurrentUser} (the verified token);
@@ -31,6 +35,9 @@ import org.springframework.transaction.annotation.Transactional;
  * If two requests change the same booking at once, the database lets one commit and the other fails with
  * an optimistic-locking error, which the API reports as 409. Nothing is held in memory, so this works
  * identically across many service instances.
+ *
+ * <p>Retries: creating a booking is idempotent per (rider, Idempotency-Key), and repeating a state change
+ * that already happened is a no-op, so a client that never saw the response can safely try again.
  */
 @Service
 public class BookingService {
@@ -42,13 +49,15 @@ public class BookingService {
     private final BookingStatusChangeRepository history;
     private final FareCalculator fares;
     private final Clock clock;
+    private final TransactionTemplate tx;
 
     public BookingService(BookingRepository bookings, BookingStatusChangeRepository history,
-                          FareCalculator fares, Clock clock) {
+                          FareCalculator fares, Clock clock, TransactionTemplate tx) {
         this.bookings = bookings;
         this.history = history;
         this.fares = fares;
         this.clock = clock;
+        this.tx = tx;
     }
 
     /** A price for every service type, so the rider can choose before booking. */
@@ -56,14 +65,50 @@ public class BookingService {
         return Arrays.stream(ServiceType.values()).map(type -> fares.estimate(type, pickup, drop)).toList();
     }
 
-    @Transactional
-    public Booking create(CurrentUser rider, ServiceType type, Place pickup, Place drop) {
+    /**
+     * Creates a booking, or, when the same rider retries with the same Idempotency-Key, returns the one
+     * already created. The unique index on (rider_id, idempotency_key) is the real guard: if two retries
+     * race, one insert wins and the loser's insert fails. That failure poisons its transaction, so the
+     * loser looks the winner's booking up again in a fresh transaction and returns it.
+     *
+     * @param idempotencyKey optional; without it every call creates a new booking
+     */
+    public CreateResult create(CurrentUser rider, ServiceType type, Place pickup, Place drop, String idempotencyKey) {
         requireRole(rider, CurrentUser.Role.RIDER);
+        String key = IdempotencyKey.validated(idempotencyKey);
+        String fingerprint = key == null ? null : RequestFingerprint.of(type, pickup, drop);
+        try {
+            return tx.execute(status -> createOnce(rider, type, pickup, drop, key, fingerprint));
+        } catch (DataIntegrityViolationException | ConcurrencyFailureException lostRace) {
+            if (key == null) {
+                throw lostRace; // nothing to deduplicate on: a genuine failure
+            }
+            return tx.execute(status -> replay(rider, key, fingerprint).orElseThrow(() -> lostRace));
+        }
+    }
+
+    private CreateResult createOnce(CurrentUser rider, ServiceType type, Place pickup, Place drop,
+                                    String key, String fingerprint) {
+        if (key != null) {
+            Optional<CreateResult> existing = replay(rider, key, fingerprint);
+            if (existing.isPresent()) {
+                return existing.get();
+            }
+        }
         Instant now = clock.instant();
         FareQuote quote = fares.estimate(type, pickup, drop); // price is decided here, never trusted from the client
-        Booking booking = bookings.save(Booking.request(rider.id(), type, pickup, drop, quote, now));
+        Booking booking = bookings.saveAndFlush(Booking.request(rider.id(), type, pickup, drop, quote, now, key, fingerprint));
         history.save(BookingStatusChange.of(booking.getId(), null, BookingStatus.REQUESTED, rider.id(), now));
-        return booking;
+        return new CreateResult(booking, false);
+    }
+
+    private Optional<CreateResult> replay(CurrentUser rider, String key, String fingerprint) {
+        return bookings.findByRiderIdAndIdempotencyKey(rider.id(), key).map(existing -> {
+            if (!fingerprint.equals(existing.getRequestFingerprint())) {
+                throw new IdempotencyKeyReusedException(); // same key, different request: a client bug, not a retry
+            }
+            return new CreateResult(existing, true);
+        });
     }
 
     @Transactional(readOnly = true)
@@ -143,7 +188,7 @@ public class BookingService {
         return driverStep(id, driver, (b, now) -> b.complete(driver.id(), now));
     }
 
-    private Booking driverStep(UUID id, CurrentUser driver, BiConsumer<Booking, Instant> action) {
+    private Booking driverStep(UUID id, CurrentUser driver, BiFunction<Booking, Instant, Boolean> action) {
         requireRole(driver, CurrentUser.Role.DRIVER);
         Booking booking = bookings.findById(id)
                 .filter(b -> driver.id().equals(b.getDriverId()))
@@ -153,6 +198,7 @@ public class BookingService {
 
     /**
      * Applies a transition and records it in the audit trail, atomically with the booking update.
+     * If the action reports no change (a retry of something already done) nothing is written at all.
      *
      * <p>LOCK ORDER MATTERS: the booking UPDATE is flushed BEFORE the history INSERT. The history row has a
      * foreign key to the booking, so inserting it first takes a shared lock on the booking row; two racing
@@ -160,10 +206,12 @@ public class BookingService {
      * deadlock (MySQL aborts one with a 500). Updating first takes the exclusive lock up front, so racing
      * transactions simply queue, and the loser fails the version check with a clean 409.
      */
-    private Booking change(Booking booking, UUID actorId, BiConsumer<Booking, Instant> action) {
+    private Booking change(Booking booking, UUID actorId, BiFunction<Booking, Instant, Boolean> action) {
         BookingStatus before = booking.getStatus();
         Instant now = clock.instant();
-        action.accept(booking, now);
+        if (!action.apply(booking, now)) {
+            return booking; // a repeat: no write, no audit row
+        }
         Booking saved = bookings.saveAndFlush(booking);
         history.save(BookingStatusChange.of(saved.getId(), before, saved.getStatus(), actorId, now));
         return saved;

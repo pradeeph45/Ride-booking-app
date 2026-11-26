@@ -70,3 +70,8 @@ export function roleLabel(role: string): string {
 export function shortDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
 }
+
+/** Whole seconds left until a deadline, never negative. Used for the offer countdown. */
+export function secondsLeft(deadlineIso: string, now: Date = new Date()): number {
+  return Math.max(0, Math.ceil((new Date(deadlineIso).getTime() - now.getTime()) / 1000));
+}

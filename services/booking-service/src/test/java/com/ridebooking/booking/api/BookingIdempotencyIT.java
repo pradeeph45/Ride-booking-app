@@ -142,10 +142,10 @@ class BookingIdempotencyIT extends BookingIntegrationTest {
     void aDriverRetryingAcceptGetsSuccessWhileADifferentDriverStillGetsConflict() throws Exception {
         UUID id = bookRide(alice);
 
-        as(driver(dave), "POST", "/bookings/" + id + "/accept").andExpect(status().isOk());
-        as(driver(dave), "POST", "/bookings/" + id + "/accept")             // the response was lost; dave tries again
+        accept(dave, id).andExpect(status().isOk());
+        accept(dave, id)             // the response was lost; dave tries again
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("MATCHED"));
-        as(driver(erin), "POST", "/bookings/" + id + "/accept").andExpect(status().isConflict());
+        accept(erin, id).andExpect(status().isConflict());
 
         assertThat(history.findByBookingIdOrderByChangedAtAsc(id)).extracting("toStatus")
                 .containsExactly(BookingStatus.REQUESTED, BookingStatus.MATCHED);
@@ -154,7 +154,9 @@ class BookingIdempotencyIT extends BookingIntegrationTest {
     @Test
     void everyStepOfTheTripCanBeRepeatedSafely() throws Exception {
         UUID id = bookRide(alice);
-        for (String step : List.of("accept", "arrive", "start", "complete")) {
+        accept(dave, id).andExpect(status().isOk());
+        accept(dave, id).andExpect(status().isOk());                                  // repeat
+        for (String step : List.of("arrive", "start", "complete")) {
             as(driver(dave), "POST", "/bookings/" + id + "/" + step).andExpect(status().isOk());
             as(driver(dave), "POST", "/bookings/" + id + "/" + step).andExpect(status().isOk()); // repeat
         }
@@ -166,7 +168,7 @@ class BookingIdempotencyIT extends BookingIntegrationTest {
     @Test
     void repeatingAnActionDoesNotLetAStrangerThrough() throws Exception {
         UUID id = bookRide(alice);
-        as(driver(dave), "POST", "/bookings/" + id + "/accept");
+        accept(dave, id);
         as(driver(dave), "POST", "/bookings/" + id + "/arrive");
 
         as(driver(erin), "POST", "/bookings/" + id + "/arrive").andExpect(status().isNotFound());   // not erin's trip

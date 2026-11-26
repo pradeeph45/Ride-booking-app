@@ -38,7 +38,8 @@ export interface BookingPage {
   nextCursor: string | null;
 }
 
-export type DriverAction = 'accept' | 'arrive' | 'start' | 'complete';
+/** The trip steps a driver performs once a ride is theirs. Taking the ride itself is an OFFER (see offers.ts). */
+export type DriverAction = 'arrive' | 'start' | 'complete';
 
 /** Prices for every service type. The server computes them; the client never sends a price. */
 export const estimateFares = (pickup: Place, drop: Place) =>
@@ -64,8 +65,6 @@ export function listBookings(opts: { cursor?: string | null; status?: BookingSta
   if (opts.cursor) query.set('cursor', opts.cursor);
   return api<BookingPage>(`/api/bookings?${query.toString()}`);
 }
-
-export const openRequests = () => api<Booking[]>('/api/bookings/open');
 
 export const driverAction = (id: string, action: DriverAction) =>
   api<Booking>(`/api/bookings/${id}/${action}`, { method: 'POST' });

@@ -29,3 +29,14 @@ ridebooking:
     # Tokens are issued by auth-service. We verify them with its public keys; we never see a private key.
     issuer: ${AUTH_ISSUER:http://localhost:8081}
     jwks-uri: ${AUTH_JWKS_URI:http://localhost:8081/oauth2/jwks}
+  matching:
+    enabled: true               # off in tests
+    tick: 2s                    # how often rides waiting for a driver are looked at
+    offer-ttl: 15s              # how long a driver has to answer an offer
+    radius-km: 8
+    candidate-limit: 10
+    retry-delay: 5s             # wait before searching again when nobody suitable was found
+    driver-service-url: ${DRIVER_SERVICE_URL:http://localhost:8083}
+    auth-url: ${AUTH_ISSUER:http://localhost:8081}
+    client-id: rb-booking
+    client-secret: ${BOOKING_CLIENT_SECRET}   # required; the secret auth-service registered for rb-booking

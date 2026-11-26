@@ -160,7 +160,8 @@ class AuthorizationServerConfig {
     RegisteredClientRepository registeredClientRepository(
             PasswordEncoder encoder,
             @Value("${ridebooking.auth.web-redirect-uri}") String webRedirectUri,
-            @Value("${ridebooking.auth.bff-client-secret}") String bffSecret) {
+            @Value("${ridebooking.auth.bff-client-secret}") String bffSecret,
+            @Value("${ridebooking.auth.booking-client-secret}") String bookingSecret) {
 
         TokenSettings tokens = TokenSettings.builder()
                 .accessTokenTimeToLive(Duration.ofMinutes(15))
@@ -194,6 +195,17 @@ class AuthorizationServerConfig {
                 .tokenSettings(tokens)
                 .build();
 
-        return new InMemoryRegisteredClientRepository(web, bff);
+        // booking-service as a MACHINE: client credentials only, one narrow scope. It cannot log users in
+        // (no OTP/Google/refresh grants) and gets no refresh token.
+        RegisteredClient booking = RegisteredClient.withId(UUID.randomUUID().toString())
+                .clientId("rb-booking")
+                .clientSecret(encoder.encode(bookingSecret))
+                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                .scope("drivers.read")
+                .tokenSettings(TokenSettings.builder().accessTokenTimeToLive(Duration.ofMinutes(10)).build())
+                .build();
+
+        return new InMemoryRegisteredClientRepository(web, bff, booking);
     }
 }

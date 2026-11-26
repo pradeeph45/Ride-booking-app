@@ -135,6 +135,7 @@ export default function Book() {
 
   /** A point chosen on the map (tap or drag): move the pin now, then fill in the street name when it arrives. */
   function pinPlaced(kind: PinKind, point: LatLng) {
+    if (kind === 'driver') return; // that pin only exists on the driver map
     const lat = String(roundCoord(point.lat));
     const lng = String(roundCoord(point.lng));
     setters[kind](fieldsFrom(point, 'Pinned location'));
@@ -146,7 +147,7 @@ export default function Book() {
     }).catch(() => undefined); // a missing label is fine: the pin still works
   }
 
-  function placeChosen(kind: PinKind, r: PlaceResult) {
+  function placeChosen(kind: 'pickup' | 'drop', r: PlaceResult) {
     setters[kind](fieldsFrom(r, r.address));
     reset();
     if (kind === 'pickup') setTarget('drop');

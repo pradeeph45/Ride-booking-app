@@ -1,5 +1,8 @@
 package com.ridebooking.booking.application;
 
+import com.ridebooking.booking.application.matching.AfterTransaction;
+import com.ridebooking.booking.application.matching.OfferCleanup;
+import com.ridebooking.booking.application.tracking.TrackingRegistry;
 import com.ridebooking.booking.domain.Booking;
 import com.ridebooking.booking.domain.BookingAccessDeniedException;
 import com.ridebooking.booking.domain.BookingNotFoundException;
@@ -20,7 +23,6 @@ import java.util.UUID;
 import java.util.function.BiFunction;
 import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -43,21 +45,25 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class BookingService {
 
     static final int MAX_PAGE = 50;
-    static final int OPEN_REQUESTS_LIMIT = 20;
 
     private final BookingRepository bookings;
     private final BookingStatusChangeRepository history;
     private final FareCalculator fares;
     private final Clock clock;
     private final TransactionTemplate tx;
+    private final OfferCleanup offerCleanup;
+    private final TrackingRegistry tracking;
 
     public BookingService(BookingRepository bookings, BookingStatusChangeRepository history,
-                          FareCalculator fares, Clock clock, TransactionTemplate tx) {
+                          FareCalculator fares, Clock clock, TransactionTemplate tx, OfferCleanup offerCleanup,
+                          TrackingRegistry tracking) {
         this.bookings = bookings;
         this.history = history;
         this.fares = fares;
         this.clock = clock;
         this.tx = tx;
+        this.offerCleanup = offerCleanup;
+        this.tracking = tracking;
     }
 
     /** A price for every service type, so the rider can choose before booking. */
@@ -153,16 +159,11 @@ public class BookingService {
         return new BookingPage(List.copyOf(items), next);
     }
 
-    @Transactional(readOnly = true)
-    public List<Booking> openRequests(CurrentUser driver) {
-        requireRole(driver, CurrentUser.Role.DRIVER);
-        return bookings.findByStatusOrderByCreatedAtAsc(BookingStatus.REQUESTED, PageRequest.of(0, OPEN_REQUESTS_LIMIT));
-    }
-
     @Transactional
     public Booking cancel(UUID id, CurrentUser rider) {
         Booking booking = bookings.findById(id).filter(b -> b.getRiderId().equals(rider.id()))
                 .orElseThrow(BookingNotFoundException::new);
+        offerCleanup.cancelPendingFor(id); // lock any live offer FIRST (offer, then booking: the same order accept uses)
         return change(booking, rider.id(), (b, now) -> b.cancelByRider(rider.id(), now));
     }
 
@@ -214,6 +215,8 @@ public class BookingService {
         }
         Booking saved = bookings.saveAndFlush(booking);
         history.save(BookingStatusChange.of(saved.getId(), before, saved.getStatus(), actorId, now));
+        // tell the live-tracking service once (and only if) the change is really committed
+        AfterTransaction.onCommit(() -> tracking.publish(saved));
         return saved;
     }
 

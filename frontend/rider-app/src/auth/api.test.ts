@@ -150,10 +150,10 @@ describe('api client', () => {
       expect(fetchMock.mock.calls[0][1].method).toBe('POST');
     });
 
-    it('reports a lost race as a 409 ApiError with the server code', async () => {
+    it('reports a conflicting change as a 409 ApiError with the server code', async () => {
       fetchMock.mockResolvedValueOnce(json(409, { code: 'BOOKING_CONFLICT' }));
 
-      await expect(driverAction('b1', 'accept')).rejects.toMatchObject({ status: 409, code: 'BOOKING_CONFLICT' });
+      await expect(driverAction('b1', 'start')).rejects.toMatchObject({ status: 409, code: 'BOOKING_CONFLICT' });
     });
   });
 

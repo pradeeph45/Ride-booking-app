@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeDevice, initialsOf, roleLabel, timeAgo } from './format';
+import { describeDevice, initialsOf, roleLabel, secondsLeft, timeAgo } from './format';
 
 describe('describeDevice', () => {
   it('turns the long Chrome-on-Windows user agent from the screenshot into a readable name', () => {
@@ -64,5 +64,19 @@ describe('small helpers', () => {
     expect(roleLabel('RIDER')).toBe('Rider');
     expect(roleLabel('DRIVER')).toBe('Driver');
     expect(roleLabel('ADMIN')).toBe('Admin');
+  });
+});
+
+describe('secondsLeft', () => {
+  const now = new Date('2026-11-24T12:00:00Z');
+
+  it('counts down to a deadline, rounding up so the last second still shows 1', () => {
+    expect(secondsLeft('2026-11-24T12:00:15Z', now)).toBe(15);
+    expect(secondsLeft('2026-11-24T12:00:00.400Z', now)).toBe(1);
+  });
+
+  it('is zero at and after the deadline, never negative', () => {
+    expect(secondsLeft('2026-11-24T12:00:00Z', now)).toBe(0);
+    expect(secondsLeft('2026-11-24T11:59:00Z', now)).toBe(0);
   });
 });

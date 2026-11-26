@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: tracking-service
+  threads:
+    virtual:
+      enabled: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+server:
+  port: 8084
+
+ridebooking:
+  security:
+    issuer: ${AUTH_ISSUER:http://localhost:8081}
+    jwks-uri: ${AUTH_JWKS_URI:http://localhost:8081/oauth2/jwks}
+  tracking:
+    # The only browser origin allowed to open a WebSocket here (the React app).
+    allowed-origin: ${ALLOWED_ORIGIN:http://localhost:5173}

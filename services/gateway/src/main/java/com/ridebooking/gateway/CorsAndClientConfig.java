@@ -19,7 +19,7 @@ class CorsAndClientConfig {
     FilterRegistrationBean<CorsFilter> corsFilter(BffProperties props) {
         CorsConfiguration cors = new CorsConfiguration();
         cors.setAllowedOrigins(List.of(props.allowedOrigin()));
-        cors.setAllowedMethods(List.of("GET", "POST", "DELETE", "OPTIONS"));
+        cors.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         cors.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-RB-CSRF", "Idempotency-Key"));
         cors.setExposedHeaders(List.of("Idempotent-Replayed")); // lets the page see that a create was a replay
         cors.setAllowCredentials(true);

@@ -31,7 +31,8 @@ import org.springframework.test.web.servlet.ResultActions;
  */
 @SpringBootTest(properties = {
         "AUTH_DB_PASSWORD=overridden-by-testcontainers",
-        "BFF_CLIENT_SECRET=bff-test-secret"})
+        "BFF_CLIENT_SECRET=bff-test-secret",
+        "BOOKING_CLIENT_SECRET=booking-test-secret"})
 @AutoConfigureMockMvc
 @Import({TestContainersConfig.class, AuthIntegrationTest.CapturingSenderConfig.class})
 public abstract class AuthIntegrationTest {

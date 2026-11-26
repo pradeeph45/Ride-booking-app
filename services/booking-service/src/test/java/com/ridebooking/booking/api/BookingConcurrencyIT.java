@@ -1,14 +1,18 @@
 package com.ridebooking.booking.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
+import com.jayway.jsonpath.JsonPath;
 import com.ridebooking.booking.BookingIntegrationTest;
+import com.ridebooking.booking.application.FareCalculator;
 import com.ridebooking.booking.domain.Booking;
 import com.ridebooking.booking.domain.BookingStatus;
 import com.ridebooking.booking.domain.BookingStatusChange;
+import com.ridebooking.booking.domain.OfferStatus;
 import com.ridebooking.booking.domain.Place;
+import com.ridebooking.booking.domain.RideOffer;
 import com.ridebooking.booking.domain.ServiceType;
-import com.ridebooking.booking.application.FareCalculator;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -26,8 +30,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
- * The reason bookings carry a @Version column: many people act on the same booking at the same instant.
- * These tests fire real parallel requests at a real MySQL and check that nobody ever wins twice.
+ * Many people act on the same ride at the same instant. These fire real parallel requests at a real MySQL and
+ * Redis and check that nobody ever wins twice and the data is never left inconsistent.
  */
 class BookingConcurrencyIT extends BookingIntegrationTest {
 
@@ -50,53 +54,71 @@ class BookingConcurrencyIT extends BookingIntegrationTest {
     }
 
     @Test
-    void fifteenDriversAcceptingTheSameBookingProduceExactlyOneWinner() throws Exception {
+    void theSameOfferAcceptedFromManyThreadsAtOnceAssignsTheDriverExactlyOnce() throws Exception {
         UUID id = bookRide(alice);
-        List<UUID> drivers = IntStream.range(0, 15).mapToObj(i -> UUID.randomUUID()).toList();
+        UUID dave = UUID.randomUUID();
+        RideOffer offer = offerTo(id, dave);   // e.g. a phone that retries aggressively on a bad network
 
-        List<Integer> statuses = runTogether(drivers.stream().<Callable<Integer>>map(d -> () ->
-                as(driver(d), "POST", "/bookings/" + id + "/accept").andReturn().getResponse().getStatus()).toList());
+        List<Integer> statuses = runTogether(IntStream.range(0, 15).<Callable<Integer>>mapToObj(i -> () ->
+                mvc.perform(post("/offers/" + offer.getId() + "/accept").with(driver(dave))).andReturn().getResponse().getStatus()).toList());
 
-        assertThat(statuses.stream().filter(s -> s == 200)).hasSize(1);
-        assertThat(statuses.stream().filter(s -> s == 409)).hasSize(14); // everyone else is told, cleanly
-        assertThat(statuses).containsOnly(200, 409);                      // never a 500
-
+        assertThat(statuses).containsOnly(200);                                  // every retry is told "yes, it is yours"
         Booking booking = bookings.findById(id).orElseThrow();
         assertThat(booking.getStatus()).isEqualTo(BookingStatus.MATCHED);
-        assertThat(drivers).contains(booking.getDriverId());               // the winner is one of them, exactly one
+        assertThat(booking.getDriverId()).isEqualTo(dave);
         assertThat(history.findByBookingIdOrderByChangedAtAsc(id)).extracting(BookingStatusChange::getToStatus)
                 .containsExactly(BookingStatus.REQUESTED, BookingStatus.MATCHED); // one MATCHED row, not fifteen
+        assertThat(offers.findById(offer.getId()).orElseThrow().getStatus()).isEqualTo(OfferStatus.ACCEPTED);
+    }
+
+    @Test
+    void driversCannotTakeAnOfferThatWasMadeToSomeoneElse() throws Exception {
+        UUID id = bookRide(alice);
+        UUID dave = UUID.randomUUID();
+        RideOffer offer = offerTo(id, dave);
+        List<UUID> strangers = IntStream.range(0, 15).mapToObj(i -> UUID.randomUUID()).toList();
+
+        List<Integer> statuses = runTogether(strangers.stream().<Callable<Integer>>map(d -> () ->
+                mvc.perform(post("/offers/" + offer.getId() + "/accept").with(driver(d))).andReturn().getResponse().getStatus()).toList());
+
+        assertThat(statuses).containsOnly(404);                                  // looks exactly like an offer that does not exist
+        assertThat(bookings.findById(id).orElseThrow().getStatus()).isEqualTo(BookingStatus.REQUESTED);
+        assertThat(offers.findById(offer.getId()).orElseThrow().getStatus()).isEqualTo(OfferStatus.PENDING);
     }
 
     /**
-     * A rider cancels while a driver accepts. Valid outcomes: cancel first (driver gets 409), accept first
-     * then cancel (both succeed, trip ends cancelled), or a true collision where one commit loses (409).
-     * What must NEVER happen is an inconsistent mix, e.g. both told "success" but the booking left MATCHED.
+     * A rider cancels while the driver accepts. Valid outcomes: cancel first (the offer is withdrawn, the accept gets
+     * 409), accept first then cancel (both succeed, the trip ends cancelled), or a collision where one loses (409).
+     * What must NEVER happen is an inconsistent mix: a live offer left behind, a driver recorded on a ride they were
+     * refused, or both sides told "success" while the ride sits MATCHED.
      */
     @RepeatedTest(8)
     void cancelRacingAcceptNeverLeavesAnInconsistentBooking() throws Exception {
         UUID id = bookRide(alice);
         UUID dave = UUID.randomUUID();
+        RideOffer offer = offerTo(id, dave);
 
         List<Integer> results = runTogether(List.of(
                 () -> as(rider(alice), "POST", "/bookings/" + id + "/cancel").andReturn().getResponse().getStatus(),
-                () -> as(driver(dave), "POST", "/bookings/" + id + "/accept").andReturn().getResponse().getStatus()));
+                () -> mvc.perform(post("/offers/" + offer.getId() + "/accept").with(driver(dave))).andReturn().getResponse().getStatus()));
         int cancelStatus = results.get(0);
         int acceptStatus = results.get(1);
 
-        assertThat(List.of(cancelStatus, acceptStatus)).containsOnly(200, 409);
+        assertThat(List.of(cancelStatus, acceptStatus)).containsOnly(200, 409);   // never a 500
         Booking booking = bookings.findById(id).orElseThrow();
         BookingStatus last = history.findByBookingIdOrderByChangedAtAsc(id).stream()
                 .map(BookingStatusChange::getToStatus).reduce((a, b) -> b).orElseThrow();
 
-        assertThat(last).isEqualTo(booking.getStatus());                         // audit trail agrees with the booking
+        assertThat(last).isEqualTo(booking.getStatus());                          // the audit trail agrees with the booking
         assertThat(cancelStatus == 200).isEqualTo(booking.getStatus() == BookingStatus.CANCELLED); // rider told "yes" iff cancelled
+        assertThat(pendingOffers()).isZero();                                      // no live offer survives, so the driver is not held
         if (booking.getStatus() == BookingStatus.MATCHED) {
-            assertThat(acceptStatus).isEqualTo(200);                             // MATCHED means the driver's accept won
+            assertThat(acceptStatus).isEqualTo(200);                               // MATCHED means the accept won
             assertThat(booking.getDriverId()).isEqualTo(dave);
         }
         if (acceptStatus == 409) {
-            assertThat(booking.getDriverId()).isNull();                          // a refused driver must not be recorded
+            assertThat(booking.getDriverId()).isNull();                            // a refused driver must not be recorded
+            assertThat(offers.findById(offer.getId()).orElseThrow().getStatus()).isNotEqualTo(OfferStatus.ACCEPTED);
         }
     }
 
@@ -132,9 +154,9 @@ class BookingConcurrencyIT extends BookingIntegrationTest {
         do {
             String url = "/bookings?limit=3" + (cursor == null ? "" : "&cursor=" + cursor);
             String body = as(rider(alice), "GET", url).andReturn().getResponse().getContentAsString();
-            List<String> ids = com.jayway.jsonpath.JsonPath.read(body, "$.items[*].id");
+            List<String> ids = JsonPath.read(body, "$.items[*].id");
             ids.forEach(id -> assertThat(seen.add(id)).as("id %s returned twice", id).isTrue());
-            cursor = com.jayway.jsonpath.JsonPath.read(body, "$.nextCursor");
+            cursor = JsonPath.read(body, "$.nextCursor");
         } while (cursor != null && ++guard < 10);
 
         assertThat(seen).isEqualTo(created); // nothing skipped, nothing repeated

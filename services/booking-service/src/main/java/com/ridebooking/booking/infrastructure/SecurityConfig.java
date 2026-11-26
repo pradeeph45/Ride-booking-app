@@ -43,9 +43,8 @@ class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/bookings", "/bookings/estimate").hasRole("RIDER")
                         .requestMatchers(HttpMethod.POST, "/bookings/*/cancel").hasRole("RIDER")
                         // driver-only
-                        .requestMatchers(HttpMethod.GET, "/bookings/open").hasRole("DRIVER")
-                        .requestMatchers(HttpMethod.POST, "/bookings/*/accept", "/bookings/*/arrive",
-                                "/bookings/*/start", "/bookings/*/complete").hasRole("DRIVER")
+                        .requestMatchers("/offers/**").hasRole("DRIVER")
+                        .requestMatchers(HttpMethod.POST, "/bookings/*/arrive", "/bookings/*/start", "/bookings/*/complete").hasRole("DRIVER")
                         // everything else (view one booking, history) just needs a valid user token
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(rs -> rs.jwt(jwt -> jwt.jwtAuthenticationConverter(converter)))

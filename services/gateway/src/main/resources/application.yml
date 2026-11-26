@@ -19,7 +19,15 @@ spring:
             - id: booking-service
               uri: ${BOOKING_SERVICE_URL:http://localhost:8082}
               predicates:
-                - Path=/api/bookings/**
+                - Path=/api/bookings/**,/api/offers/**
+              filters:
+                - StripPrefix=1
+
+            # The driver profile and live location. /internal/** is deliberately NOT routed: it is for services only.
+            - id: driver-service
+              uri: ${DRIVER_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/drivers/**
               filters:
                 - StripPrefix=1
 

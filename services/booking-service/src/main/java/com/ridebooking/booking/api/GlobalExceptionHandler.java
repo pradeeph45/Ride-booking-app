@@ -4,6 +4,8 @@ import com.ridebooking.booking.application.IdempotencyKeyReusedException;
 import com.ridebooking.booking.domain.BookingAccessDeniedException;
 import com.ridebooking.booking.domain.BookingNotFoundException;
 import com.ridebooking.booking.domain.InvalidBookingTransitionException;
+import com.ridebooking.booking.domain.OfferNotActiveException;
+import com.ridebooking.booking.domain.OfferNotFoundException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -68,6 +70,17 @@ public class GlobalExceptionHandler {
     }
 
     /** Same Idempotency-Key, different request: refuse rather than guess which one the client meant. */
+    @ExceptionHandler(OfferNotFoundException.class)
+    ResponseEntity<ApiError> offerNotFound(OfferNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiError.of("OFFER_NOT_FOUND", e.getMessage()));
+    }
+
+    /** The offer ran out of time, was declined, or the ride was cancelled: the driver must wait for the next one. */
+    @ExceptionHandler(OfferNotActiveException.class)
+    ResponseEntity<ApiError> offerNotActive(OfferNotActiveException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiError.of(e.isExpired() ? "OFFER_EXPIRED" : "OFFER_NOT_ACTIVE", e.getMessage()));
+    }
+
     @ExceptionHandler(IdempotencyKeyReusedException.class)
     ResponseEntity<ApiError> keyReused(IdempotencyKeyReusedException e) {
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(ApiError.of("IDEMPOTENCY_KEY_REUSED", e.getMessage()));

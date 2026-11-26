@@ -85,6 +85,10 @@ public class Booking {
     @Column(name = "request_fingerprint", updatable = false, length = 64)
     private String requestFingerprint;
 
+    /** Matching will not try this ride again before this time (set after a failed search or an unanswered offer). */
+    @Column(name = "dispatch_after")
+    private Instant dispatchAfter;
+
     @Version
     private long version;
 
@@ -114,6 +118,7 @@ public class Booking {
         b.currency = quote.currency();
         b.createdAt = now;
         b.updatedAt = now;
+        b.dispatchAfter = now;
         return b;
     }
 
@@ -185,6 +190,11 @@ public class Booking {
         this.updatedAt = now;
     }
 
+    /** Used after a search finds nobody: wait a little before looking again. */
+    public void deferDispatchUntil(Instant when) {
+        this.dispatchAfter = when;
+    }
+
     public boolean involves(UUID userId) {
         return riderId.equals(userId) || userId.equals(driverId);
     }
@@ -203,6 +213,7 @@ public class Booking {
     public String getCurrency() { return currency; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public Instant getDispatchAfter() { return dispatchAfter; }
     public String getIdempotencyKey() { return idempotencyKey; }
     public String getRequestFingerprint() { return requestFingerprint; }
 }

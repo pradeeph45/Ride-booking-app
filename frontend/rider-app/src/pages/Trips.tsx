@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom';
 import {
   SERVICE_ICONS, SERVICE_LABELS, cancelBooking, formatMoney, listBookings, type Booking, type BookingStatus,
 } from '../auth/bookings';
+import { haversineKm } from '../map/geo';
 import RouteMap from '../map/RouteMap';
+import { useLiveDriver } from '../tracking/useLiveDriver';
 import { timeAgo } from '../ui/format';
 import StatusPill from '../ui/StatusPill';
 import TripProgress from '../ui/TripProgress';
@@ -24,6 +26,43 @@ export function Stops({ trip }: { trip: Booking }) {
       <span className="m-line" aria-hidden="true" /><span />
       <span className="m-dot drop" aria-hidden="true" /><span>{name(trip.drop)}</span>
     </div>
+  );
+}
+
+/**
+ * The map for a trip that is not finished. Once a driver is assigned it follows them live: the car moves toward the
+ * pickup, then along the trip. Before that it simply shows the route while we look for a driver.
+ */
+function LiveTripMap({ trip }: { trip: Booking }) {
+  const following = ['MATCHED', 'ARRIVED', 'STARTED'].includes(trip.status);
+  const { position, connected } = useLiveDriver(trip.id, following);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 5000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const heading = trip.status === 'STARTED' ? trip.drop : trip.pickup;
+  const km = position ? haversineKm(position, heading) : null;
+  const stale = position !== null && position.ts > 0 && now - position.ts > 30_000; // no update for 30 s
+
+  return (
+    <>
+      <RouteMap pickup={trip.pickup} drop={trip.drop} driver={stale ? null : position} height={200} label={following ? 'Live driver location' : 'Trip route'} />
+      {!following && trip.status === 'REQUESTED' && <div className="searching">Finding a driver near you…</div>}
+      {following && (
+        <div className="live-status" aria-live="polite">
+          <span>
+            {stale ? 'Driver location unavailable right now'
+              : km === null ? 'Waiting for your driver’s location…'
+              : trip.status === 'STARTED' ? `${km.toFixed(1)} km to your destination`
+              : trip.status === 'ARRIVED' ? 'Your driver is at the pickup'
+              : `Your driver is ${km.toFixed(1)} km away`}
+          </span>
+          <span className={`pill ${connected ? 'ok' : ''}`}>{connected ? 'Live' : 'Connecting…'}</span>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -117,9 +156,7 @@ export default function Trips() {
           </div>
 
           <Stops trip={t} />
-          {!TERMINAL.includes(t.status) && (
-            <RouteMap pickup={t.pickup} drop={t.drop} height={180} label="Trip route" />
-          )}
+          {!TERMINAL.includes(t.status) && <LiveTripMap trip={t} />}
 
           {t.status !== 'CANCELLED' && <TripProgress status={t.status} />}
           {t.status === 'MATCHED' && <div className="alert info">🚗 A driver is on the way to your pickup.</div>}

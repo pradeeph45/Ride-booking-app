@@ -87,17 +87,7 @@ public class BookingController {
         return new BookingPageResponse(page.items().stream().map(BookingResponse::from).toList(), page.nextCursor());
     }
 
-    // ---- driver --------------------------------------------------------------------------------
-
-    @GetMapping("/open")
-    public List<BookingResponse> open(@AuthenticationPrincipal Jwt jwt) {
-        return service.openRequests(CurrentUser.from(jwt)).stream().map(BookingResponse::from).toList();
-    }
-
-    @PostMapping("/{id}/accept")
-    public BookingResponse accept(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
-        return BookingResponse.from(service.accept(id, CurrentUser.from(jwt)));
-    }
+    // ---- driver: the trip steps. Taking a ride happens through an OFFER (see OfferController). ----------
 
     @PostMapping("/{id}/arrive")
     public BookingResponse arrive(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {

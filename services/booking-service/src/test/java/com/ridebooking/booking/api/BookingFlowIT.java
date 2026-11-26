@@ -92,8 +92,8 @@ class BookingFlowIT extends BookingIntegrationTest {
         // a driver cannot book, a rider cannot drive
         mvc.perform(post("/bookings").with(driver(dave)).contentType(MediaType.APPLICATION_JSON)
                 .content(MG_ROAD_TO_KORAMANGALA.formatted("BIKE"))).andExpect(status().isForbidden());
-        as(rider(alice), "POST", "/bookings/" + id + "/accept").andExpect(status().isForbidden());
-        as(rider(alice), "GET", "/bookings/open").andExpect(status().isForbidden());
+        as(rider(alice), "POST", "/offers/" + UUID.randomUUID() + "/accept").andExpect(status().isForbidden());
+        as(rider(alice), "GET", "/offers/mine").andExpect(status().isForbidden());
         as(driver(dave), "POST", "/bookings/" + id + "/cancel").andExpect(status().isForbidden());
     }
 
@@ -114,7 +114,7 @@ class BookingFlowIT extends BookingIntegrationTest {
     void aTripGoesFromRequestedToCompleted() throws Exception {
         UUID id = bookRide(alice);
 
-        as(driver(dave), "POST", "/bookings/" + id + "/accept")
+        accept(dave, id)
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("MATCHED"))
                 .andExpect(jsonPath("$.driverId").value(dave.toString()));
         as(driver(dave), "POST", "/bookings/" + id + "/arrive").andExpect(jsonPath("$.status").value("ARRIVED"));
@@ -135,14 +135,44 @@ class BookingFlowIT extends BookingIntegrationTest {
     }
 
     @Test
+    void liveTrackingEntriesFollowTheTripAndDisappearWhenItEnds() throws Exception {
+        UUID id = bookRide(alice);
+        org.assertj.core.api.Assertions.assertThat(redis.hasKey("tracking:booking:" + id)).isFalse();   // nobody to follow yet
+
+        accept(dave, id).andExpect(status().isOk());
+        org.assertj.core.api.Assertions.assertThat(redis.opsForValue().get("tracking:booking:" + id)).contains(alice.toString()).contains(dave.toString());
+        org.assertj.core.api.Assertions.assertThat(redis.opsForValue().get("tracking:driver:" + dave)).isEqualTo(id.toString());
+
+        as(driver(dave), "POST", "/bookings/" + id + "/arrive");
+        as(driver(dave), "POST", "/bookings/" + id + "/start");
+        org.assertj.core.api.Assertions.assertThat(redis.opsForValue().get("tracking:booking:" + id)).contains("STARTED");
+
+        as(driver(dave), "POST", "/bookings/" + id + "/complete");
+        org.assertj.core.api.Assertions.assertThat(redis.hasKey("tracking:booking:" + id)).isFalse();
+        org.assertj.core.api.Assertions.assertThat(redis.hasKey("tracking:driver:" + dave)).isFalse();
+    }
+
+    @Test
+    void aCancelledRideAfterAcceptanceStopsBeingTracked() throws Exception {
+        UUID id = bookRide(alice);
+        accept(dave, id);
+        org.assertj.core.api.Assertions.assertThat(redis.hasKey("tracking:booking:" + id)).isTrue();
+
+        as(rider(alice), "POST", "/bookings/" + id + "/cancel").andExpect(status().isOk());
+
+        org.assertj.core.api.Assertions.assertThat(redis.hasKey("tracking:booking:" + id)).isFalse();
+        org.assertj.core.api.Assertions.assertThat(redis.hasKey("tracking:driver:" + dave)).isFalse();
+    }
+
+    @Test
     void stepsCannotBeSkippedAndOnlyTheAssignedDriverMayProgress() throws Exception {
         UUID id = bookRide(alice);
-        as(driver(dave), "POST", "/bookings/" + id + "/accept").andExpect(status().isOk());
+        accept(dave, id).andExpect(status().isOk());
 
         as(driver(dave), "POST", "/bookings/" + id + "/start").andExpect(status().isConflict());     // must arrive first
         as(driver(dave), "POST", "/bookings/" + id + "/complete").andExpect(status().isConflict());
         as(driver(erin), "POST", "/bookings/" + id + "/arrive").andExpect(status().isNotFound());    // not erin's trip
-        as(driver(erin), "POST", "/bookings/" + id + "/accept").andExpect(status().isConflict());    // already taken
+        accept(erin, id).andExpect(status().isConflict());    // already taken
     }
 
     @Test
@@ -150,33 +180,45 @@ class BookingFlowIT extends BookingIntegrationTest {
         UUID early = bookRide(alice);
         as(rider(alice), "POST", "/bookings/" + early + "/cancel")
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CANCELLED"));
-        as(driver(dave), "POST", "/bookings/" + early + "/accept").andExpect(status().isConflict()); // cancelled: not takeable
+        accept(dave, early).andExpect(status().isConflict()); // cancelled: not takeable
         // a retry of the same cancel (e.g. the first response was lost) succeeds without changing anything
         as(rider(alice), "POST", "/bookings/" + early + "/cancel")
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CANCELLED"));
         assertThat(history.findByBookingIdOrderByChangedAtAsc(early)).hasSize(2); // REQUESTED, CANCELLED: no duplicate row
 
         UUID late = bookRide(alice);
-        as(driver(dave), "POST", "/bookings/" + late + "/accept");
+        accept(dave, late);
         as(driver(dave), "POST", "/bookings/" + late + "/arrive");
         as(driver(dave), "POST", "/bookings/" + late + "/start");
         as(rider(alice), "POST", "/bookings/" + late + "/cancel").andExpect(status().isConflict());   // mid-trip
     }
 
     @Test
-    void driversSeeOnlyOpenRequestsOldestFirst() throws Exception {
-        UUID first = bookRide(alice);
-        UUID second = bookRide(bob);
-        UUID cancelled = bookRide(alice);
-        UUID taken = bookRide(bob);
-        as(rider(alice), "POST", "/bookings/" + cancelled + "/cancel");
-        as(driver(erin), "POST", "/bookings/" + taken + "/accept");
+    void driversSeeOnlyTheirOwnLiveOffersAndNeverTheRidersIdentity() throws Exception {
+        UUID forDave = bookRide(alice);
+        UUID forErin = bookRide(bob);
+        offerTo(forDave, dave);
+        offerTo(forErin, erin);
 
-        String body = as(driver(dave), "GET", "/bookings/open").andExpect(status().isOk())
+        String body = as(driver(dave), "GET", "/offers/mine").andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].bookingId").value(forDave.toString()))
+                .andExpect(jsonPath("$[0].pickup.address").value("MG Road"))
+                .andExpect(jsonPath("$[0].riderId").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
 
-        List<String> ids = JsonPath.read(body, "$[*].id");
-        assertThat(ids).containsExactly(first.toString(), second.toString());
+        assertThat(body).doesNotContain(alice.toString()).doesNotContain(bob.toString());
+        as(driver(UUID.randomUUID()), "GET", "/offers/mine").andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void expiredOffersDisappearFromTheDriversList() throws Exception {
+        offerTo(bookRide(alice), dave);
+        as(driver(dave), "GET", "/offers/mine").andExpect(jsonPath("$.length()").value(1));
+
+        clock.advance(java.time.Duration.ofSeconds(61));
+
+        as(driver(dave), "GET", "/offers/mine").andExpect(jsonPath("$.length()").value(0));
     }
 
     // ---- ride history --------------------------------------------------------------------------
@@ -212,7 +254,7 @@ class BookingFlowIT extends BookingIntegrationTest {
     void historyCanBeFilteredByStatusAndDriversSeeTheirOwnTrips() throws Exception {
         UUID done = bookRide(alice);
         UUID open = bookRide(alice);
-        as(driver(dave), "POST", "/bookings/" + done + "/accept");
+        accept(dave, done);
         as(driver(dave), "POST", "/bookings/" + done + "/arrive");
         as(driver(dave), "POST", "/bookings/" + done + "/start");
         as(driver(dave), "POST", "/bookings/" + done + "/complete");

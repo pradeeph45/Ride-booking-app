@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: driver-service
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    # Docker Compose MySQL is published on host port 3307. The password must come from the environment.
+    url: ${DRIVER_DB_URL:jdbc:mysql://localhost:3307/rb_user?preserveInstants=true&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true}
+    username: ${DRIVER_DB_USER:rb_app}
+    password: ${DRIVER_DB_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate   # Flyway owns the schema; Hibernate only verifies it
+  flyway:
+    enabled: true
+
+server:
+  port: 8083
+
+ridebooking:
+  security:
+    issuer: ${AUTH_ISSUER:http://localhost:8081}
+    jwks-uri: ${AUTH_JWKS_URI:http://localhost:8081/oauth2/jwks}
+  presence:
+    heartbeat-timeout: 30s        # a driver silent for this long stops being offered rides
+    sweep-interval: 10s
+    min-ping-interval: 1s         # location updates faster than this are refused (429)
+    sweeper: true                 # off in tests

@@ -35,6 +35,7 @@ ridebooking:
     issuer: ${AUTH_ISSUER:http://localhost:8081}
     web-redirect-uri: ${WEB_REDIRECT_URI:http://localhost:5173/callback}
     bff-client-secret: ${BFF_CLIENT_SECRET}   # required; never commit a value
+    booking-client-secret: ${BOOKING_CLIENT_SECRET}   # required; the secret booking-service uses to call other services
   google:
     client-id: ${GOOGLE_CLIENT_ID:}   # public OAuth client id from Google Cloud Console (not a secret); empty = Google login off
   otp:

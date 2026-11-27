@@ -39,7 +39,7 @@ class ServiceClientTest {
     static final String TOKEN_1 = "{\"access_token\":\"token-1\",\"expires_in\":600,\"token_type\":\"Bearer\"}";
     static final String TOKEN_2 = "{\"access_token\":\"token-2\",\"expires_in\":600,\"token_type\":\"Bearer\"}";
     static final MatchingProperties PROPS = new MatchingProperties(true, Duration.ofSeconds(2), Duration.ofSeconds(15), 8,
-            10, Duration.ofSeconds(5), "http://drivers", "http://auth", "rb-booking", "s3cr3t");
+            10, Duration.ofSeconds(5), Duration.ofMinutes(3), "http://drivers", "http://auth", "rb-booking", "s3cr3t");
 
     final UUID near = UUID.randomUUID();
     MockRestServiceServer server;

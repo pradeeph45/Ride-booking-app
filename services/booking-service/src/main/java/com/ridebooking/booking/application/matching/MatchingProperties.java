@@ -16,6 +16,8 @@ public record MatchingProperties(
         @DefaultValue("10") int candidateLimit,
         /* wait this long before searching again for a ride nobody could take */
         @DefaultValue("5s") Duration retryDelay,
+        /* a ride nobody accepted within this long is closed as EXPIRED ("no driver found") */
+        @DefaultValue("3m") Duration unmatchedTimeout,
         @DefaultValue("http://localhost:8083") String driverServiceUrl,
         @DefaultValue("http://localhost:8081") String authUrl,
         @DefaultValue("rb-booking") String clientId,

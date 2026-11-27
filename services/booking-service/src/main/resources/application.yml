@@ -35,6 +35,7 @@ ridebooking:
     offer-ttl: 15s              # how long a driver has to answer an offer
     radius-km: 8
     candidate-limit: 10
+    unmatched-timeout: 3m       # no driver accepted in this time: the ride is closed as EXPIRED
     retry-delay: 5s             # wait before searching again when nobody suitable was found
     driver-service-url: ${DRIVER_SERVICE_URL:http://localhost:8083}
     auth-url: ${AUTH_ISSUER:http://localhost:8081}

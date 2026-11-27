@@ -37,6 +37,16 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
             + "FOR UPDATE SKIP LOCKED", nativeQuery = true)
     Optional<Booking> lockForDispatch(@Param("id") UUID id, @Param("now") Instant now);
 
+    /** Rides that have waited longer than the search window. A plain read: each is re-checked under a lock. */
+    @Query(value = "SELECT b.* FROM bookings b WHERE b.status = 'REQUESTED' AND b.created_at <= :cutoff "
+            + "ORDER BY b.created_at LIMIT :limit", nativeQuery = true)
+    List<Booking> findUnmatchedSince(@Param("cutoff") Instant cutoff, @Param("limit") int limit);
+
+    /** Locks one still-waiting ride for expiry; SKIP LOCKED so a concurrent accept or cancel simply wins. */
+    @Query(value = "SELECT b.* FROM bookings b WHERE b.id = :id AND b.status = 'REQUESTED' AND b.created_at <= :cutoff "
+            + "FOR UPDATE SKIP LOCKED", nativeQuery = true)
+    Optional<Booking> lockForExpiry(@Param("id") UUID id, @Param("cutoff") Instant cutoff);
+
     /** Of these drivers, the ones who already have a ride in progress and so must not be offered another. */
     @Query("select distinct b.driverId from Booking b where b.driverId in :ids and b.status in "
             + "(com.ridebooking.booking.domain.BookingStatus.MATCHED, com.ridebooking.booking.domain.BookingStatus.ARRIVED, "

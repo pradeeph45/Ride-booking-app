@@ -13,6 +13,7 @@ import java.util.Set;
  * REQUESTED -> MATCHED -> ARRIVED -> STARTED -> COMPLETED
  *     \           \          \
  *      +-----------+----------+--> CANCELLED   (rider, any time before the trip starts)
+ *     \n *      +--> EXPIRED   (no driver accepted in time; system only)
  * </pre>
  */
 public enum BookingStatus {
@@ -21,17 +22,20 @@ public enum BookingStatus {
     ARRIVED,
     STARTED,
     COMPLETED,
-    CANCELLED;
+    CANCELLED,
+    /** No driver accepted within the search window. Set by the system, never by a user. */
+    EXPIRED;
 
     private static final Map<BookingStatus, Set<BookingStatus>> NEXT = new EnumMap<>(BookingStatus.class);
 
     static {
-        NEXT.put(REQUESTED, EnumSet.of(MATCHED, CANCELLED));
+        NEXT.put(REQUESTED, EnumSet.of(MATCHED, CANCELLED, EXPIRED));
         NEXT.put(MATCHED, EnumSet.of(ARRIVED, CANCELLED));
         NEXT.put(ARRIVED, EnumSet.of(STARTED, CANCELLED));
         NEXT.put(STARTED, EnumSet.of(COMPLETED));
         NEXT.put(COMPLETED, EnumSet.noneOf(BookingStatus.class));
         NEXT.put(CANCELLED, EnumSet.noneOf(BookingStatus.class));
+        NEXT.put(EXPIRED, EnumSet.noneOf(BookingStatus.class));
     }
 
     public boolean canMoveTo(BookingStatus next) {

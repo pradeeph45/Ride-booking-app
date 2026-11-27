@@ -207,6 +207,27 @@ public class BookingService {
      * deadlock (MySQL aborts one with a 500). Updating first takes the exclusive lock up front, so racing
      * transactions simply queue, and the loser fails the version check with a clean 409.
      */
+    /** Actor recorded in the audit trail for changes made by the system itself (all zeros: not a real user). */
+    public static final UUID SYSTEM = new UUID(0L, 0L);
+
+    /**
+     * Closes a ride nobody accepted. Offer first, then booking (the lock order accept and cancel use). If the ride
+     * is no longer waiting (accepted or cancelled a moment ago) nothing is changed, not even its offers.
+     *
+     * @return true if the ride was expired by this call
+     */
+    @Transactional
+    public boolean expireIfUnmatched(UUID id, Instant cutoff) {
+        offerCleanup.cancelPendingFor(id);
+        Booking ride = bookings.lockForExpiry(id, cutoff).orElse(null);
+        if (ride == null) {
+            org.springframework.transaction.interceptor.TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+            return false;
+        }
+        change(ride, SYSTEM, (b, now) -> b.expire(now));
+        return true;
+    }
+
     private Booking change(Booking booking, UUID actorId, BiFunction<Booking, Instant, Boolean> action) {
         BookingStatus before = booking.getStatus();
         Instant now = clock.instant();

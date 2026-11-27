@@ -167,6 +167,11 @@ public class Booking {
         return moveToUnlessAlready(BookingStatus.CANCELLED, now);
     }
 
+    /** The search window ran out with no driver. Retry-safe; only possible while still REQUESTED. */
+    public boolean expire(Instant now) {
+        return moveToUnlessAlready(BookingStatus.EXPIRED, now);
+    }
+
     private void requireAssignedDriver(UUID driver) {
         if (driverId == null || !driverId.equals(driver)) {
             throw new BookingAccessDeniedException("You are not the driver of this booking");

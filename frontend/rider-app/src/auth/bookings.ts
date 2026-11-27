@@ -1,7 +1,7 @@
 import { api } from './api';
 
 export type ServiceType = 'BIKE' | 'AUTO' | 'CAR_MINI' | 'CAR_SEDAN' | 'CAR_SUV';
-export type BookingStatus = 'REQUESTED' | 'MATCHED' | 'ARRIVED' | 'STARTED' | 'COMPLETED' | 'CANCELLED';
+export type BookingStatus = 'REQUESTED' | 'MATCHED' | 'ARRIVED' | 'STARTED' | 'COMPLETED' | 'CANCELLED' | 'EXPIRED';
 
 export interface Place {
   lat: number;

@@ -11,11 +11,12 @@ import StatusPill from '../ui/StatusPill';
 import TripProgress from '../ui/TripProgress';
 
 const CANCELLABLE: BookingStatus[] = ['REQUESTED', 'MATCHED', 'ARRIVED'];
-const TERMINAL: BookingStatus[] = ['COMPLETED', 'CANCELLED'];
+const TERMINAL: BookingStatus[] = ['COMPLETED', 'CANCELLED', 'EXPIRED'];
 const FILTERS: { label: string; status?: BookingStatus }[] = [
   { label: 'All' },
   { label: 'Completed', status: 'COMPLETED' },
   { label: 'Cancelled', status: 'CANCELLED' },
+  { label: 'No driver', status: 'EXPIRED' },
 ];
 
 export function Stops({ trip }: { trip: Booking }) {
@@ -158,9 +159,15 @@ export default function Trips() {
           <Stops trip={t} />
           {!TERMINAL.includes(t.status) && <LiveTripMap trip={t} />}
 
-          {t.status !== 'CANCELLED' && <TripProgress status={t.status} />}
+          {t.status !== 'CANCELLED' && t.status !== 'EXPIRED' && <TripProgress status={t.status} />}
           {t.status === 'MATCHED' && <div className="alert info">🚗 A driver is on the way to your pickup.</div>}
           {t.status === 'ARRIVED' && <div className="alert ok">📍 Your driver has arrived.</div>}
+          {t.status === 'EXPIRED' && (
+            <div className="alert info">
+              😕 No driver accepted this ride.
+              <Link className="btn sm" to="/book">Try again</Link>
+            </div>
+          )}
 
           <div className="trip-foot">
             <span className="price">

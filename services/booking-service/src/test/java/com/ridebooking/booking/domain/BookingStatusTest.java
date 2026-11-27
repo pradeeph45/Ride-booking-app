@@ -3,6 +3,7 @@ package com.ridebooking.booking.domain;
 import static com.ridebooking.booking.domain.BookingStatus.ARRIVED;
 import static com.ridebooking.booking.domain.BookingStatus.CANCELLED;
 import static com.ridebooking.booking.domain.BookingStatus.COMPLETED;
+import static com.ridebooking.booking.domain.BookingStatus.EXPIRED;
 import static com.ridebooking.booking.domain.BookingStatus.MATCHED;
 import static com.ridebooking.booking.domain.BookingStatus.REQUESTED;
 import static com.ridebooking.booking.domain.BookingStatus.STARTED;
@@ -36,8 +37,14 @@ class BookingStatusTest {
     }
 
     @Test
+    void onlyAWaitingRideCanExpire() {
+        assertThat(REQUESTED.canMoveTo(EXPIRED)).isTrue();
+        assertThat(List.of(MATCHED, ARRIVED, STARTED, COMPLETED, CANCELLED)).noneMatch(s -> s.canMoveTo(EXPIRED));
+    }
+
+    @Test
     void terminalStatesGoNowhere() {
-        for (BookingStatus terminal : List.of(COMPLETED, CANCELLED)) {
+        for (BookingStatus terminal : List.of(COMPLETED, CANCELLED, EXPIRED)) {
             assertThat(terminal.isTerminal()).isTrue();
             for (BookingStatus any : BookingStatus.values()) {
                 assertThat(terminal.canMoveTo(any)).isFalse();

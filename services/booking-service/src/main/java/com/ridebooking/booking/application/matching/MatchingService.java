@@ -1,5 +1,6 @@
 package com.ridebooking.booking.application.matching;
 
+import com.ridebooking.booking.application.BookingService;
 import com.ridebooking.booking.domain.Booking;
 import com.ridebooking.booking.domain.BookingRepository;
 import com.ridebooking.booking.domain.RideOffer;
@@ -41,8 +42,9 @@ public class MatchingService {
     private final MatchingProperties props;
     private final Clock clock;
     private final TransactionTemplate tx;
+    private final BookingService bookingService;
 
-    public MatchingService(BookingRepository bookings, RideOfferRepository offers, DriverDirectory directory,
+    public MatchingService(BookingService bookingService, BookingRepository bookings, RideOfferRepository offers, DriverDirectory directory,
                            DriverReservations reservations, MatchingProperties props, Clock clock, TransactionTemplate tx) {
         this.bookings = bookings;
         this.offers = offers;
@@ -51,11 +53,13 @@ public class MatchingService {
         this.props = props;
         this.clock = clock;
         this.tx = tx;
+        this.bookingService = bookingService;
     }
 
     /** One matching pass: expire stale offers, then offer every waiting ride to a driver. Returns offers created. */
     public int tick() {
         expireDueOffers();
+        expireUnmatchedRides();
         int created = 0;
         for (Booking ride : bookings.findDispatchCandidates(clock.instant(), RIDES_PER_TICK)) {
             try {
@@ -70,6 +74,18 @@ public class MatchingService {
             }
         }
         return created;
+    }
+
+    /** A ride nobody accepted within the search window is closed, so the rider is told rather than left waiting. */
+    void expireUnmatchedRides() {
+        Instant cutoff = clock.instant().minus(props.unmatchedTimeout());
+        for (Booking ride : bookings.findUnmatchedSince(cutoff, EXPIRIES_PER_TICK)) {
+            try {
+                bookingService.expireIfUnmatched(ride.getId(), cutoff);
+            } catch (RuntimeException e) {
+                log.warn("Could not expire an unmatched ride; it will be retried on a later pass", e);
+            }
+        }
     }
 
     /** Offers that ran out of time go back to the pool: the driver is freed and the ride is matched again. */

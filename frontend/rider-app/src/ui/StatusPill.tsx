@@ -7,6 +7,7 @@ const LABELS: Record<BookingStatus, string> = {
   STARTED: 'On trip',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
+  EXPIRED: 'No driver found',
 };
 
 export default function StatusPill({ status }: { status: BookingStatus }) {

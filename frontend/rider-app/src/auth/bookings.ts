@@ -31,6 +31,10 @@ export interface Booking {
   driverId: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Set when the trip completes. Null figures mean the fare was not metered. */
+  actualDistanceKm?: number | null;
+  actualMinutes?: number | null;
+  fareSource?: 'ESTIMATE' | 'METERED' | null;
 }
 
 export interface BookingPage {
@@ -95,4 +99,18 @@ export const SERVICE_TAGLINES: Record<ServiceType, string> = {
 
 export function formatMoney(amount: number, currency: string): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency }).format(amount);
+}
+
+/**
+ * One line explaining how a completed trip was priced, or null while it is not finished. A metered fare shows what
+ * was actually driven next to the quote; otherwise it says the quote stood.
+ */
+export function fareNote(b: Pick<Booking, 'status' | 'fareSource' | 'actualDistanceKm' | 'actualMinutes' | 'estimatedFare' | 'finalFare' | 'currency'>): string | null {
+  if (b.status !== 'COMPLETED') return null;
+  if (b.fareSource === 'METERED' && b.actualDistanceKm != null && b.actualMinutes != null) {
+    const quoted = formatMoney(b.estimatedFare, b.currency);
+    const capped = b.finalFare !== null && Math.abs(b.finalFare - b.estimatedFare * 1.5) < 0.01; // billed at the ceiling
+    return `Metered: ${b.actualDistanceKm.toFixed(1)} km · ${b.actualMinutes} min (quoted ${quoted})${capped ? ' · capped at 1.5× the quote' : ''}`;
+  }
+  return 'Fare as quoted: no trip data was available to meter it';
 }

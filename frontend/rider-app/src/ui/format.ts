@@ -75,3 +75,9 @@ export function shortDateTime(iso: string): string {
 export function secondsLeft(deadlineIso: string, now: Date = new Date()): number {
   return Math.max(0, Math.ceil((new Date(deadlineIso).getTime() - now.getTime()) / 1000));
 }
+
+/** "★ 4.8 (12 ratings)", or null when nobody has rated yet. */
+export function formatRating(average: number | null, count: number): string | null {
+  if (average === null || count === 0) return null;
+  return `★ ${average.toFixed(1)} (${count} rating${count === 1 ? '' : 's'})`;
+}

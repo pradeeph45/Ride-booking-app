@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeDevice, initialsOf, roleLabel, secondsLeft, timeAgo } from './format';
+import { describeDevice, formatRating, initialsOf, roleLabel, secondsLeft, timeAgo } from './format';
 
 describe('describeDevice', () => {
   it('turns the long Chrome-on-Windows user agent from the screenshot into a readable name', () => {
@@ -78,5 +78,19 @@ describe('secondsLeft', () => {
   it('is zero at and after the deadline, never negative', () => {
     expect(secondsLeft('2026-11-24T12:00:00Z', now)).toBe(0);
     expect(secondsLeft('2026-11-24T11:59:00Z', now)).toBe(0);
+  });
+});
+
+describe('formatRating', () => {
+  it('shows one decimal and a count', () => {
+    expect(formatRating(4.83, 12)).toBe('★ 4.8 (12 ratings)');
+  });
+
+  it('says rating, not ratings, for exactly one', () => {
+    expect(formatRating(5, 1)).toBe('★ 5.0 (1 rating)');
+  });
+
+  it('shows nothing until someone has rated', () => {
+    expect(formatRating(null, 0)).toBeNull();
   });
 });

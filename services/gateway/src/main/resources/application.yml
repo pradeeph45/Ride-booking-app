@@ -19,7 +19,7 @@ spring:
             - id: booking-service
               uri: ${BOOKING_SERVICE_URL:http://localhost:8082}
               predicates:
-                - Path=/api/bookings/**,/api/offers/**
+                - Path=/api/bookings/**,/api/offers/**,/api/ratings/**
               filters:
                 - StripPrefix=1
 

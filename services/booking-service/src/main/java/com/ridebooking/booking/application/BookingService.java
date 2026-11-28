@@ -2,6 +2,8 @@ package com.ridebooking.booking.application;
 
 import com.ridebooking.booking.application.matching.AfterTransaction;
 import com.ridebooking.booking.application.matching.OfferCleanup;
+import com.ridebooking.booking.application.metering.FareSettlement;
+import com.ridebooking.booking.application.metering.TripMeter;
 import com.ridebooking.booking.application.tracking.TrackingRegistry;
 import com.ridebooking.booking.domain.Booking;
 import com.ridebooking.booking.domain.BookingAccessDeniedException;
@@ -10,6 +12,7 @@ import com.ridebooking.booking.domain.BookingRepository;
 import com.ridebooking.booking.domain.BookingStatus;
 import com.ridebooking.booking.domain.BookingStatusChange;
 import com.ridebooking.booking.domain.BookingStatusChangeRepository;
+import com.ridebooking.booking.domain.FareSource;
 import com.ridebooking.booking.domain.Place;
 import com.ridebooking.booking.domain.ServiceType;
 import jakarta.persistence.criteria.Predicate;
@@ -21,6 +24,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.BiFunction;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Sort;
@@ -44,6 +49,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class BookingService {
 
+    private static final Logger log = LoggerFactory.getLogger(BookingService.class);
     static final int MAX_PAGE = 50;
 
     private final BookingRepository bookings;
@@ -53,10 +59,12 @@ public class BookingService {
     private final TransactionTemplate tx;
     private final OfferCleanup offerCleanup;
     private final TrackingRegistry tracking;
+    private final TripMeter meter;
+    private final FareSettlement settlement;
 
     public BookingService(BookingRepository bookings, BookingStatusChangeRepository history,
                           FareCalculator fares, Clock clock, TransactionTemplate tx, OfferCleanup offerCleanup,
-                          TrackingRegistry tracking) {
+                          TrackingRegistry tracking, TripMeter meter, FareSettlement settlement) {
         this.bookings = bookings;
         this.history = history;
         this.fares = fares;
@@ -64,6 +72,8 @@ public class BookingService {
         this.tx = tx;
         this.offerCleanup = offerCleanup;
         this.tracking = tracking;
+        this.meter = meter;
+        this.settlement = settlement;
     }
 
     /** A price for every service type, so the rider can choose before booking. */
@@ -181,12 +191,34 @@ public class BookingService {
 
     @Transactional
     public Booking start(UUID id, CurrentUser driver) {
-        return driverStep(id, driver, (b, now) -> b.start(driver.id(), now));
+        Booking started = driverStep(id, driver, (b, now) -> b.start(driver.id(), now));
+        // after commit, like the tracking registry: the meter never runs for a trip that did not really start
+        AfterTransaction.onCommit(() -> startMeter(started));
+        return started;
     }
 
+    /**
+     * Ends the trip. The fare is what was actually driven when the trip meter has enough data, otherwise the quoted
+     * estimate. Repeating the call changes nothing, including the fare.
+     */
     @Transactional
     public Booking complete(UUID id, CurrentUser driver) {
-        return driverStep(id, driver, (b, now) -> b.complete(driver.id(), now));
+        Booking done = driverStep(id, driver, (b, now) -> {
+            Optional<MeteredFare> metered = settlement.settle(b, now);
+            return metered
+                    .map(m -> b.complete(driver.id(), now, m.fare(), m.distanceKm(), m.minutes(), FareSource.METERED))
+                    .orElseGet(() -> b.complete(driver.id(), now));
+        });
+        AfterTransaction.onCommit(() -> meter.discard(id));
+        return done;
+    }
+
+    private void startMeter(Booking started) {
+        try {
+            meter.begin(started.getId(), started.getUpdatedAt());
+        } catch (RuntimeException e) {
+            log.warn("Could not start the trip meter for booking {}; it will be completed at the estimate", started.getId(), e);
+        }
     }
 
     private Booking driverStep(UUID id, CurrentUser driver, BiFunction<Booking, Instant, Boolean> action) {

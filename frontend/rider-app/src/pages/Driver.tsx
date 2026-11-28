@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiError } from '../auth/api';
 import {
-  SERVICE_ICONS, SERVICE_LABELS, driverAction, formatMoney, listBookings, type Booking, type DriverAction, type ServiceType,
+  SERVICE_ICONS, SERVICE_LABELS, driverAction, fareNote, formatMoney, listBookings, type Booking, type DriverAction, type ServiceType,
 } from '../auth/bookings';
 import {
   getProfile, goOffline, goOnline, saveProfile, type DriverProfile, type VehicleForm,
@@ -10,6 +10,7 @@ import { acceptOffer, myOffers, rejectOffer, type Offer } from '../auth/offers';
 import { useLocationSharing, type LocationSource } from '../driver/useLocationSharing';
 import type { LatLng } from '../map/geo';
 import RouteMap from '../map/RouteMap';
+import { MyRatingBadge, RatingWidget } from '../ui/RatingWidget';
 import StatusPill from '../ui/StatusPill';
 import TripProgress from '../ui/TripProgress';
 import { secondsLeft } from '../ui/format';
@@ -123,6 +124,7 @@ export default function Driver() {
   const [active, setActive] = useState<Booking | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [justCompleted, setJustCompleted] = useState<Booking | null>(null); // the trip just finished: shows the fare and lets the driver rate the rider
   const [source, setSource] = useState<LocationSource>('simulator');
   const [start, setStart] = useState<LatLng>(DEFAULT_START);
   const profileRef = useRef(profile);
@@ -204,7 +206,8 @@ export default function Driver() {
     setBusy(true);
     setMessage(null);
     try {
-      await driverAction(booking.id, action);
+      const updated = await driverAction(booking.id, action);
+      if (action === 'complete') setJustCompleted(updated);
     } catch {
       setMessage('That did not work. Please try again.');
     } finally {
@@ -238,7 +241,7 @@ export default function Driver() {
       <div>
         <h1 className="page-title">Driver console</h1>
         <p className="page-sub">
-          {SERVICE_ICONS[profile.vehicleType]} {SERVICE_LABELS[profile.vehicleType]} · {profile.vehicleModel} · {profile.plateNumber}{' '}
+          {SERVICE_ICONS[profile.vehicleType]} {SERVICE_LABELS[profile.vehicleType]} · {profile.vehicleModel} · {profile.plateNumber} <MyRatingBadge />{' '}
           <button className="btn ghost sm" onClick={() => setEditing(true)}>Edit</button>
         </p>
       </div>
@@ -260,6 +263,16 @@ export default function Driver() {
 
       {online && offer && !active && (
         <OfferCard offer={offer} busy={busy} onAccept={() => answer(offer, 'accept')} onReject={() => answer(offer, 'reject')} />
+      )}
+
+      {justCompleted && !active && (
+        <div className="card">
+          <div className="section-title"><h3>Trip completed</h3></div>
+          <div className="price">{formatMoney(justCompleted.finalFare ?? justCompleted.estimatedFare, justCompleted.currency)}</div>
+          {fareNote(justCompleted) && <div className="hint">{fareNote(justCompleted)}</div>}
+          <RatingWidget bookingId={justCompleted.id} whom="rider" />
+          <button className="btn ghost sm" onClick={() => setJustCompleted(null)}>Done</button>
+        </div>
       )}
 
       {active && (

@@ -265,3 +265,14 @@ details.coords .row { margin-top: 8px; }
 .searching { display: flex; align-items: center; gap: 10px; color: var(--muted); font-weight: 600; }
 .searching::before { content: ""; width: 14px; height: 14px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--primary); animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ratings */
+.rating { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 12px; background: var(--surface-2, var(--info-soft)); }
+.rating.done { flex-direction: row; align-items: center; gap: 10px; color: var(--muted); }
+.stars { color: var(--border); letter-spacing: 2px; white-space: nowrap; }
+.stars .on { color: #f5a524; }
+.star-input { display: flex; align-items: center; gap: 4px; }
+.star-input button { background: none; border: 0; padding: 2px 4px; font-size: 1.8rem; line-height: 1; cursor: pointer; color: var(--border); }
+.star-input button.on { color: #f5a524; }
+.star-input button:focus-visible { outline: 2px solid var(--primary); border-radius: 6px; }
+.rating textarea { width: 100%; resize: vertical; font: inherit; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg, transparent); color: inherit; }

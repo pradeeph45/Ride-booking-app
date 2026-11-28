@@ -68,6 +68,17 @@ public class Booking {
     @Column(name = "final_fare", precision = 10, scale = 2)
     private BigDecimal finalFare;
 
+    /** Set when the trip completes. Null actual figures mean the fare was not metered. */
+    @Column(name = "actual_distance_km", precision = 8, scale = 2)
+    private BigDecimal actualDistanceKm;
+
+    @Column(name = "actual_minutes")
+    private Integer actualMinutes;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fare_source", length = 10)
+    private FareSource fareSource;
+
     @Column(nullable = false, updatable = false, length = 3)
     private String currency;
 
@@ -150,11 +161,24 @@ public class Booking {
         return moveToUnlessAlready(BookingStatus.STARTED, now);
     }
 
+    /** Completes the trip at the quoted fare (no trip data to meter from). */
     public boolean complete(UUID driver, Instant now) {
+        return complete(driver, now, null, null, null, null);
+    }
+
+    /**
+     * Completes the trip. With a metered figure the final fare is what was actually driven; without one the quoted
+     * estimate stands. Retry-safe: completing a completed trip changes nothing, including the fare.
+     */
+    public boolean complete(UUID driver, Instant now, BigDecimal fare, BigDecimal actualKm, Integer actualMin, FareSource source) {
         requireAssignedDriver(driver);
         boolean changed = moveToUnlessAlready(BookingStatus.COMPLETED, now);
         if (changed) {
-            this.finalFare = estimatedFare; // metered fare replaces this once live tracking exists
+            boolean metered = source == FareSource.METERED && fare != null;
+            this.finalFare = metered ? fare : estimatedFare;
+            this.fareSource = metered ? FareSource.METERED : FareSource.ESTIMATE;
+            this.actualDistanceKm = metered ? actualKm : null;
+            this.actualMinutes = metered ? actualMin : null;
         }
         return changed;
     }
@@ -215,6 +239,9 @@ public class Booking {
     public int getEstimatedMinutes() { return estimatedMinutes; }
     public BigDecimal getEstimatedFare() { return estimatedFare; }
     public BigDecimal getFinalFare() { return finalFare; }
+    public BigDecimal getActualDistanceKm() { return actualDistanceKm; }
+    public Integer getActualMinutes() { return actualMinutes; }
+    public FareSource getFareSource() { return fareSource; }
     public String getCurrency() { return currency; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

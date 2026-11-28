@@ -21,6 +21,8 @@ public class FareCalculator {
     private static final double EARTH_RADIUS_KM = 6371.0088;
     private static final double ROAD_FACTOR = 1.3;
     private static final double MIN_DISTANCE_KM = 0.1;
+    /** A metered fare may exceed the quoted estimate by at most this factor. */
+    public static final BigDecimal METERED_CAP = new BigDecimal("1.5");
 
     /** Per-service pricing: base fare, per km, per minute, minimum fare, average speed (km/h). */
     private record Policy(String base, String perKm, String perMinute, String minimum, double speedKmh) {}
@@ -44,13 +46,33 @@ public class FareCalculator {
         BigDecimal distance = BigDecimal.valueOf(km).setScale(2, RoundingMode.HALF_UP);
         int minutes = Math.max(1, (int) Math.ceil(km / policy.speedKmh() * 60));
 
-        BigDecimal fare = new BigDecimal(policy.base())
+        return new FareQuote(type, distance, minutes, price(policy, distance, minutes), CURRENCY);
+    }
+
+    /**
+     * Prices a trip from what was actually driven, with the SAME rate card as the estimate. The result is never
+     * above {@link #METERED_CAP} times the estimate: a detour or a doctored meter cannot run the rider's bill up
+     * without limit, and the driver can never earn less than the service minimum.
+     *
+     * @param meters  distance driven between start and complete, as measured from GPS pings
+     * @param seconds time between start and complete
+     */
+    public MeteredFare metered(ServiceType type, BigDecimal estimatedFare, double meters, long seconds) {
+        Policy policy = POLICIES.get(type);
+        BigDecimal distance = BigDecimal.valueOf(meters / 1000.0).setScale(2, RoundingMode.HALF_UP);
+        int minutes = (int) Math.max(1, Math.ceil(seconds / 60.0));
+        BigDecimal raw = price(policy, distance, minutes);
+        BigDecimal ceiling = estimatedFare.multiply(METERED_CAP).setScale(2, RoundingMode.HALF_UP);
+        boolean capped = raw.compareTo(ceiling) > 0;
+        return new MeteredFare(distance, minutes, capped ? ceiling : raw, capped);
+    }
+
+    private static BigDecimal price(Policy policy, BigDecimal distance, int minutes) {
+        return new BigDecimal(policy.base())
                 .add(distance.multiply(new BigDecimal(policy.perKm())))
                 .add(new BigDecimal(policy.perMinute()).multiply(BigDecimal.valueOf(minutes)))
                 .max(new BigDecimal(policy.minimum()))
                 .setScale(2, RoundingMode.HALF_UP);
-
-        return new FareQuote(type, distance, minutes, fare, CURRENCY);
     }
 
     static double roadDistanceKm(Place a, Place b) {

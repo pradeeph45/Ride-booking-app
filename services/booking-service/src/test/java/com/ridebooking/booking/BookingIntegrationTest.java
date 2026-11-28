@@ -85,6 +85,8 @@ public abstract class BookingIntegrationTest {
     @Autowired protected BookingRepository bookings;
     @Autowired protected BookingStatusChangeRepository history;
     @Autowired protected RideOfferRepository offers;
+    @Autowired protected com.ridebooking.booking.domain.RatingRepository ratings;
+    @Autowired protected com.ridebooking.booking.domain.RatingStatsRepository ratingStats;
     @Autowired protected StringRedisTemplate redis;
     @Autowired protected MutableClock clock;
     @Autowired protected FakeDriverDirectory directory;
@@ -92,6 +94,8 @@ public abstract class BookingIntegrationTest {
     /** Each test starts from an empty database, an empty Redis and no drivers on the map. */
     @BeforeEach
     void cleanState() {
+        ratings.deleteAll();
+        ratingStats.deleteAll();
         offers.deleteAll();
         history.deleteAll();
         bookings.deleteAll();
@@ -142,6 +146,22 @@ public abstract class BookingIntegrationTest {
                 .filter(o -> o.getDriverId().equals(driverId)).findFirst()
                 .orElseGet(() -> offerTo(bookingId, driverId));
         return mvc.perform(post("/offers/" + offer.getId() + "/accept").with(driver(driverId)));
+    }
+
+    /** A trip that has been accepted, reached and started: the driver is now being metered. Returns the booking id. */
+    protected UUID startedTrip(UUID riderId, UUID driverId) throws Exception {
+        UUID ride = bookRide(riderId);
+        accept(driverId, ride).andExpect(status().isOk());
+        for (String step : java.util.List.of("arrive", "start")) {
+            mvc.perform(post("/bookings/" + ride + "/" + step).with(driver(driverId))).andExpect(status().isOk());
+        }
+        return ride;
+    }
+
+    /** A GPS ping exactly as driver-service publishes it on the driver-locations channel. */
+    protected static String pingJson(UUID driverId, double lat, double lng, long tsMillis) {
+        return String.format(java.util.Locale.ROOT, "{\"driverId\":\"%s\",\"lat\":%s,\"lng\":%s,\"heading\":0.0,\"ts\":%d}",
+                driverId, lat, lng, tsMillis);
     }
 
     protected long pendingOffers() {

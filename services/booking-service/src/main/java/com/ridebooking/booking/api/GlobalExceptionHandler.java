@@ -1,11 +1,13 @@
 package com.ridebooking.booking.api;
 
 import com.ridebooking.booking.application.IdempotencyKeyReusedException;
+import com.ridebooking.booking.domain.AlreadyRatedException;
 import com.ridebooking.booking.domain.BookingAccessDeniedException;
 import com.ridebooking.booking.domain.BookingNotFoundException;
 import com.ridebooking.booking.domain.InvalidBookingTransitionException;
 import com.ridebooking.booking.domain.OfferNotActiveException;
 import com.ridebooking.booking.domain.OfferNotFoundException;
+import com.ridebooking.booking.domain.RatingNotAllowedException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -79,6 +81,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(OfferNotActiveException.class)
     ResponseEntity<ApiError> offerNotActive(OfferNotActiveException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiError.of(e.isExpired() ? "OFFER_EXPIRED" : "OFFER_NOT_ACTIVE", e.getMessage()));
+    }
+
+    /** Ratings open only after the trip is completed. */
+    @ExceptionHandler(RatingNotAllowedException.class)
+    ResponseEntity<ApiError> ratingNotAllowed(RatingNotAllowedException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiError.of("TRIP_NOT_COMPLETED", e.getMessage()));
+    }
+
+    /** A rating is final: a second, different answer for the same trip is refused. */
+    @ExceptionHandler(AlreadyRatedException.class)
+    ResponseEntity<ApiError> alreadyRated(AlreadyRatedException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiError.of("ALREADY_RATED", e.getMessage()));
     }
 
     @ExceptionHandler(IdempotencyKeyReusedException.class)

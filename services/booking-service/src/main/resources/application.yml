@@ -29,6 +29,12 @@ ridebooking:
     # Tokens are issued by auth-service. We verify them with its public keys; we never see a private key.
     issuer: ${AUTH_ISSUER:http://localhost:8081}
     jwks-uri: ${AUTH_JWKS_URI:http://localhost:8081/oauth2/jwks}
+  metering:
+    listener: true              # off in tests that feed pings by hand
+    max-speed-kmh: 200          # a hop faster than this is a GPS glitch (the demo simulator does about 156)
+    min-move-meters: 5          # smaller movement is GPS wobble while standing still
+    max-consecutive-jumps: 3    # after this many glitches in a row the new position is trusted
+    state-ttl: 6h
   matching:
     enabled: true               # off in tests
     tick: 2s                    # how often rides waiting for a driver are looked at

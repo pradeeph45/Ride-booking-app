@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  SERVICE_ICONS, SERVICE_LABELS, cancelBooking, formatMoney, listBookings, type Booking, type BookingStatus,
+  SERVICE_ICONS, SERVICE_LABELS, cancelBooking, fareNote, formatMoney, listBookings, type Booking, type BookingStatus,
 } from '../auth/bookings';
 import { haversineKm } from '../map/geo';
 import RouteMap from '../map/RouteMap';
 import { useLiveDriver } from '../tracking/useLiveDriver';
 import { timeAgo } from '../ui/format';
+import { MyRatingBadge, RatingWidget } from '../ui/RatingWidget';
 import StatusPill from '../ui/StatusPill';
 import TripProgress from '../ui/TripProgress';
 
@@ -118,7 +119,7 @@ export default function Trips() {
     <div className="container">
       <div>
         <h1 className="page-title">My trips</h1>
-        <p className="page-sub">Your rides, newest first.</p>
+        <p className="page-sub">Your rides, newest first. <MyRatingBadge /></p>
       </div>
 
       <div className="chips" role="group" aria-label="Filter trips">
@@ -162,6 +163,7 @@ export default function Trips() {
           {t.status !== 'CANCELLED' && t.status !== 'EXPIRED' && <TripProgress status={t.status} />}
           {t.status === 'MATCHED' && <div className="alert info">🚗 A driver is on the way to your pickup.</div>}
           {t.status === 'ARRIVED' && <div className="alert ok">📍 Your driver has arrived.</div>}
+          {t.status === 'COMPLETED' && t.driverId && <RatingWidget bookingId={t.id} whom="driver" />}
           {t.status === 'EXPIRED' && (
             <div className="alert info">
               😕 No driver accepted this ride.
@@ -169,6 +171,7 @@ export default function Trips() {
             </div>
           )}
 
+          {fareNote(t) && <div className="hint">{fareNote(t)}</div>}
           <div className="trip-foot">
             <span className="price">
               {formatMoney(t.finalFare ?? t.estimatedFare, t.currency)}
